@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import path from 'node:path';
-import { StopError, uniqueVisible, visibleItems, privateDir, safeUrl } from './utils.mjs';
+import { StopError, uniqueVisible, visibleItems, privateDir, safeUrl, waitFor } from './utils.mjs';
 
 // Deliberately not configurable through CLI/environment variables.
 // A production rollout needs a separate, reviewed configuration and regression test.
@@ -23,6 +23,45 @@ function exactOrigins(values) {
     }
     return url.origin;
   });
+}
+
+// Use the application's real logout action, then check that revisiting the app
+// still requires login. Closing a persistent context alone preserves its session.
+export async function logoutSession(session, config) {
+  const { page, kind } = session;
+  const app = config[kind];
+  const allowedOrigins = new Set([APPS[kind], ...exactOrigins(app.additionalNavigationOrigins)]);
+  const signedOut = async () => {
+    if (!allowedOrigins.has(new URL(page.url()).origin)) return false;
+    if ((await visibleItems(session.readyLocator())).length) return false;
+    for (const selector of [app.login.usernameSelector, app.login.passwordSelector, app.login.submitSelector]) {
+      if (!selector || (await visibleItems(page.locator(selector))).length !== 1) return false;
+    }
+    return true;
+  };
+  const alreadySignedOut = await signedOut();
+  if (!alreadySignedOut) {
+    assertStagingPage(page, kind);
+    if (!app.logout?.menuSelector || !app.logout?.logoutSelector) {
+      throw new StopError('LOGOUT_CONFIG', `${kind}: verified logout selectors are required.`);
+    }
+    const logout = page.locator(app.logout.logoutSelector);
+    if (!(await visibleItems(logout)).length) {
+      await (await uniqueVisible(page.locator(app.logout.menuSelector), `${kind} profile menu`, config.timeoutMs)).click();
+    }
+    const control = await uniqueVisible(logout, `${kind} Logout`, config.timeoutMs);
+    assertStagingPage(page, kind);
+    await control.click();
+  }
+  await waitFor(signedOut, { timeoutMs: config.timeoutMs, description: `${kind} signed-out login form` });
+  await page.goto(APPS[kind] + '/', { waitUntil: 'domcontentloaded' });
+  await waitFor(signedOut, { timeoutMs: config.timeoutMs, description: `${kind} requires login after reopening` });
+  return {
+    application: kind,
+    outcome: alreadySignedOut ? 'ALREADY_SIGNED_OUT' : 'SIGNED_OUT_VERIFIED',
+    message: 'Login is required after reopening the application.',
+    finishedAt: new Date().toISOString()
+  };
 }
 
 export async function createSession(kind, config, root, { headless = false, ask } = {}) {
@@ -74,6 +113,7 @@ export async function createSession(kind, config, root, { headless = false, ask 
     const selector = kind === 'procare' ? app.selectors.partnersNav : app.selectors.partnerEmployeesNav;
     return selector ? page.locator(selector) : page.getByText(kind === 'procare' ? 'Partners' : 'Partner Employees', { exact: true });
   };
+  session.logout = () => logoutSession(session, config);
   session.ensureLogin = async () => {
     await page.goto(APPS[kind] + '/', { waitUntil: 'domcontentloaded' });
     const ready = async () => (await visibleItems(session.readyLocator())).length === 1;

@@ -65,7 +65,8 @@ try {
     await active.ensureLogin();
     const manifest = await collectEmployees(active, clean(args.partner), config, { pagination: args.pagination, ask });
     await writeJson(path.join(outputDir, 'employees.json'), manifest);
-    await active.close(); sessions.pop(); active = null;
+    // Keep both sessions available for logout after the task report is saved.
+    active = null;
 
     report = {
       environment: 'staging', mode: args.apply ? 'apply' : 'dry-run', partner: manifest.partner,
@@ -114,7 +115,39 @@ try {
   }
   process.exitCode = 1;
 } finally {
-  for (const session of sessions.reverse()) await session.close().catch(() => {});
+  const cleanup = { status: 'COMPLETED', results: [], finishedAt: null };
+  for (const session of sessions.reverse()) {
+    if (!args['login-only']) {
+      try {
+        const result = await session.logout();
+        cleanup.results.push(result);
+        console.log(`${session.kind}: ${result.outcome} — ${result.message}`);
+      } catch (error) {
+        cleanup.status = 'COMPLETED_WITH_ERRORS';
+        cleanup.results.push({ application: session.kind, outcome: 'LOGOUT_FAILED', code: error.code || error.name, message: error.message.split('\n')[0], finishedAt: new Date().toISOString() });
+        console.error(`${session.kind}: logout could not be verified. ${error.message.split('\n')[0]}`);
+        if (outputDir) await diagnostics(session.page, outputDir, `${session.kind}-logout-failed`, config.screenshots).catch(() => {});
+      }
+    }
+    try { await session.close(); }
+    catch (error) {
+      cleanup.status = 'COMPLETED_WITH_ERRORS';
+      cleanup.results.push({ application: session.kind, outcome: 'BROWSER_CLOSE_FAILED', message: error.message.split('\n')[0], finishedAt: new Date().toISOString() });
+      console.error(`${session.kind}: browser cleanup failed.`);
+    }
+  }
+  cleanup.finishedAt = new Date().toISOString();
+  if (outputDir) {
+    // Also covers failures before employee collection created a task report.
+    try { await writeJson(path.join(outputDir, 'logout.json'), cleanup); }
+    catch { console.error('Could not save logout.json.'); process.exitCode ||= 3; }
+    if (report) {
+      report.cleanup = cleanup;
+      try { await saveReport(outputDir, report); }
+      catch { console.error('Could not add logout results to report.json; check logout.json.'); process.exitCode ||= 3; }
+    }
+  }
+  if (cleanup.status === 'COMPLETED_WITH_ERRORS') process.exitCode ||= 3;
   if (releaseLock) await releaseLock().catch(() => {});
   terminal?.close();
 }

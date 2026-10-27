@@ -118,8 +118,8 @@ export async function collectEmployees(session, partnerName, config, { paginatio
     if (cells.length >= 7) {
       const partnerStatus = clean(cells[cells.length - 1]);
       console.log(`\nPartner status: ${partnerStatus}`);
-      if (partnerStatus.toLowerCase() !== 'terminated') {
-        throw new StopError('PARTNER_ACTIVE', `Partner "${partnerName}" status is "${partnerStatus}". Only Terminated partners can be processed. Halting automation.`);
+      if (!['terminated', 'inactive'].includes(partnerStatus.toLowerCase())) {
+        throw new StopError(partnerStatus.toLowerCase() === 'active' ? 'PARTNER_ACTIVE' : 'PARTNER_STATUS_NOT_ALLOWED', `Partner "${partnerName}" status is "${partnerStatus}". Only Terminated or Inactive partners can be processed. Halting automation.`);
       }
     }
   }

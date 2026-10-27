@@ -1,4 +1,24 @@
-# Current validation: apply without an extra prompt
+# Current validation: Inactive partner support (2026-10-27)
+
+`npm run check` and `npm test` passed: **46 passed, 0 failed**.
+
+The Procare partner status check now accepts Terminated and Inactive, case-insensitively with whitespace normalization, for both preview and apply. Active partners remain blocked with `PARTNER_ACTIVE`; other disallowed statuses use `PARTNER_STATUS_NOT_ALLOWED`. The latest Partner 4 failure had reported Inactive, which the previous Terminated-only rule rejected.
+
+The offline Procare fixture now includes the seven-column partner search result and its status. Five added regressions exercise Terminated, Inactive, mixed-case/whitespace Inactive, Active, and Suspended; rejected statuses stop before opening the partner. Existing employee processing and logout tests pass. No live employee changes or new live automation runs were performed for this update.
+
+# Previous validation: automatic logout (2026-10-27)
+
+`npm run check` and `npm test` passed: **41 passed, 0 failed**.
+
+Live UI inspection confirmed Procare's `.profile.cpointer` menu and `.profile .dropdown a:has(i.fa-sign-out)` logout action, and CoreHR's `[data-id="avatar"]` menu and `[data-id="logout"]` action. Both menus open with a click. No generated CSS classes are used.
+
+The implemented `session.logout()` passed live staging checks for both apps: `SIGNED_OUT_VERIFIED` for Procare at 12:06:14 UTC and CoreHR at 12:06:26 UTC. Each returned to the approved Auth0 login form, then required login again after navigating back to its application root. These checks only signed in, opened account menus, and signed out; no live employee was edited or saved. Full live employee processing was not rerun for this change.
+
+Offline regressions cover both UI menus, already-signed-out sessions, ambiguous logout controls, failed logout, automatic session restoration, and rejecting a login form on an unapproved origin. CLI coverage verifies logout happens after the task report is saved, both browsers close even if one logout fails, employee results remain unchanged by cleanup failures, collection errors still produce `logout.json`, and login-only preserves prepared sessions. Existing preview/apply tests still verify zero Saves in preview and exactly one Save in apply.
+
+The following sections preserve previous validation records.
+
+# Previous validation: apply without an extra prompt
 
 `npm run check`, `npm test` (**31 passed, 0 failed**), and CLI help validation passed.
 

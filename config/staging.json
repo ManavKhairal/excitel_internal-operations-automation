@@ -7,6 +7,10 @@
   "screenshots": true,
   "browserExecutablePath": null,
   "procare": {
+    "logout": {
+      "menuSelector": ".profile.cpointer",
+      "logoutSelector": ".profile .dropdown a:has(i.fa-sign-out)"
+    },
     "additionalNavigationOrigins": ["https://excitel-prerelease.eu.auth0.com"],
     "additionalWriteOrigins": [
       "https://excitel-prerelease.eu.auth0.com",
@@ -30,6 +34,10 @@
     }
   },
   "corehr": {
+    "logout": {
+      "menuSelector": "[data-id=\"avatar\"]",
+      "logoutSelector": "[data-id=\"logout\"]"
+    },
     "searchQueryParam": "filter",
     "additionalNavigationOrigins": ["https://excitel-prerelease.eu.auth0.com"],
     "additionalWriteOrigins": [

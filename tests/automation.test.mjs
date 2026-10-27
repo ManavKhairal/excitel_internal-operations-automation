@@ -72,6 +72,25 @@ test('optimistic UI success is not enough: unpersisted change stops without a se
   const r = await runCorehr({ doNotPersist: true }, 'alpha', true);
   assert.equal(r.result.outcome, 'SAVE_UNVERIFIED'); assert.equal(r.stopBatch, true); assert.deepEqual(r.state.saves, ['alpha']);
 });
+for (const status of ['Terminated', 'Inactive', '  iNaCtIvE  ', 'Active', 'Suspended']) {
+  test(`Procare partner eligibility: ${JSON.stringify(status)}`, async () => {
+    const f = await procareFixture(browser, [['alpha']], { partnerStatus: status });
+    try {
+      const collection = collectEmployees(f.session, 'Acme Staging Partner', await testConfig());
+      if (['terminated', 'inactive'].includes(status.trim().toLowerCase())) {
+        assert.deepEqual((await collection).usernames, ['alpha']);
+      } else {
+        await assert.rejects(collection, {
+          code: status === 'Active' ? 'PARTNER_ACTIVE' : 'PARTNER_STATUS_NOT_ALLOWED',
+          message: /Only Terminated or Inactive partners/
+        });
+        assert.equal(f.page.url(), 'https://procare-del-prerelease.north.excitel.in/');
+        assert.equal(await f.page.locator('#employees').count(), 0);
+      }
+    } finally { await f.context.close(); }
+  });
+}
+
 test('Procare collects all configured pages and deduplicates usernames', async () => {
   const f = await procareFixture(browser, [['alpha', 'beta'], ['beta', 'gamma']]);
   try {

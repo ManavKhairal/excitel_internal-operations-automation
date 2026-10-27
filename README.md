@@ -2,7 +2,7 @@
 
 A local Node.js + Playwright project for the workflow you described:
 
-1. Open staging Procare, authenticate, select Partners and search an exact partner name.
+1. Open staging Procare, authenticate, select Partners and search an exact partner name. Eligible partner statuses are **Terminated** and **Inactive**; Active and other statuses are rejected by the status check.
 2. Open that partner's Employees link, extracting the actual partner ID from its URL.
 3. Read usernames from the employee list, collect all pages and remove duplicate usernames.
 4. Open staging CoreHR and use **Partner Employees**, not the separate Employees screen.
@@ -11,12 +11,13 @@ A local Node.js + Playwright project for the workflow you described:
 7. With `--apply`, set an Active employee to Inactive and click Save once, without an additional confirmation prompt.
 8. Reload, search and reopen the same username, and confirm that Inactive persisted.
 9. Write per-user results, including already-inactive, not-found, failed and unprocessed users.
+10. Log out of CoreHR and Procare using their UI menus, verify that reopening each app requires login, and close both browsers.
 
 **Current scope:** manual trigger, staging only. No Zendesk, Gmail, AI API, Joget, production switch, or database updates are included. No extra AI subscription/API key is needed to run this script.
 
 ## Validation status and known gaps
 
-The code passed **31 offline browser-fixture, CLI, and unit tests**. These tests simulate CoreHR markup and the verified Procare table/pager. They do **not** connect to either company application or deactivate real users. Separate staging run evidence is recorded in `TEST_RESULTS.md`.
+The code passed **46 offline browser-fixture, CLI, and unit tests**. These tests simulate CoreHR markup, the verified Procare table/pager, partner status eligibility, and logout flows. They do **not** connect to either company application or deactivate real users. Separate staging run and live logout evidence is recorded in `TEST_RESULTS.md`.
 
 Your supplied CoreHR `data-id` selectors are used directly. Generated `css-*` and `_ngcontent-*` classes are deliberately not used.
 
@@ -73,6 +74,8 @@ When you run `npm run login` or `npm start`, the script will:
 
 If MFA/2FA is enabled on your Auth0 account, the script will fill the username and password but you will need to complete the MFA step manually in the browser that opens.
 
+Normal task runs, including previews, sign out of both applications after saving results. The next run signs in again using configured credentials, with manual MFA if required. `npm run login` deliberately keeps its prepared sessions; it does not execute a task or immediately log out.
+
 ## 3. First run: preview only
 
 Replace the quoted placeholder with an exact partner name in staging:
@@ -110,6 +113,7 @@ Each run creates a private, timestamped `output/<run>/` folder:
 | `employees.json` | Exact partner name/ID, source URL, unique usernames, page counts and collection time. |
 | `report.csv` | One row per username, suitable for Excel/Sheets review. |
 | `report.json` | Same results plus counts and batch metadata. |
+| `logout.json` | Per-application logout verification and browser cleanup results, including when collection fails before a task report exists. |
 | `<username>-before.png` | Optional screenshot immediately before an apply attempt. |
 | `<username>-verified-inactive.png` | Optional screenshot after reopening and verifying Inactive. |
 | `*-ui-summary.json`, `*.png`, `error.json` | Local failure diagnostics. |
@@ -130,6 +134,14 @@ No real employee sample is bundled. Report fields include username, outcome, bef
 | Other error code | An identity, selector, login, environment or connectivity check failed. Review diagnostics. |
 
 Successful checks verify the **CoreHR status field**, not revocation of all active sessions or permissions in downstream applications.
+
+### Automatic logout
+
+The script keeps Procare's session available until the task finishes, saves the task results (or failure diagnostics), then attempts CoreHR and Procare logout before closing their browsers. The verified controls are Procare's profile menu → Logout and CoreHR's avatar menu → Logout. Their selectors are in each application's `logout` configuration.
+
+Logout succeeds only when the allowed login screen is visible and reopening the application still requires login. Results appear in `logout.json` and `report.json` under `cleanup`: `SIGNED_OUT_VERIFIED`, `ALREADY_SIGNED_OUT`, or `LOGOUT_FAILED`. Browser-close failures are also recorded. A logout problem does not overwrite employee outcomes or the task's completion status; it prints a warning and returns exit code **3** if the task otherwise succeeded. Existing task failure exit codes take precedence. Review `cleanup` as well as the task status.
+
+Cleanup is also attempted on handled task errors. Forced process termination, a machine shutdown, or an unreachable application can prevent verified logout; browser closure alone is never reported as successful sign-out.
 
 ## Configuring the remaining selectors
 

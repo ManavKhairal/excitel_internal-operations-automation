@@ -124,7 +124,8 @@ export async function procareFixture(browser, pages = [['alpha', 'beta'], ['gamm
       document.getElementById('nav').onclick=()=>{
         main.innerHTML='<input placeholder="Partner Name or #Default NAS Port"><div id="result"></div>';
         main.querySelector('input').onkeydown=e=>{if(e.key==='Enter'){
-          document.getElementById('result').innerHTML='<a href="/partner/42" id="partner">Acme Staging Partner</a>';
+          document.getElementById('result').innerHTML='<table><thead><tr><th>Partner Name</th><th>Phone</th><th>Email</th><th>Address</th><th>City</th><th>State</th><th>Status</th></tr></thead><tbody><tr><td><a href="/partner/42" id="partner">Acme Staging Partner</a></td><td></td><td></td><td></td><td></td><td></td><td id="partner-status"></td></tr></tbody></table>';
+          document.getElementById('partner-status').textContent=settings.partnerStatus ?? 'Terminated';
           document.getElementById('partner').onclick=e=>{e.preventDefault();window.__mockNavigation('/partner/42');main.innerHTML='<h2>Acme Staging Partner</h2><a href="/partner/42/employee" id="employees"> Employees </a>';
             document.getElementById('employees').onclick=e=>{e.preventDefault();window.__mockNavigation('/partner/42/employee'); index=settings.startPage || 0; table()};};
         }};
