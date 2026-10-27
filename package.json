@@ -1,0 +1,15 @@
+{
+  "name": "corehr-staging-automation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Staging-only Procare employee collection and verified CoreHR deactivation",
+  "engines": { "node": ">=22.0.0" },
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "login": "node src/cli.mjs --login-only",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "check": "node --check src/cli.mjs && node --check src/procare.mjs && node --check src/corehr.mjs && node --check src/browser.mjs && node --check src/utils.mjs"
+  },
+  "dependencies": { "playwright": "^1.57.0" }
+}

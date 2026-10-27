@@ -1,0 +1,62 @@
+{
+  "timeoutMs": 20000,
+  "searchTimeoutMs": 15000,
+  "resultSettleMs": 1200,
+  "maxEmployees": 100,
+  "maxPages": 100,
+  "screenshots": true,
+  "browserExecutablePath": null,
+  "procare": {
+    "additionalNavigationOrigins": ["https://excitel-prerelease.eu.auth0.com"],
+    "additionalWriteOrigins": [
+      "https://excitel-prerelease.eu.auth0.com",
+      "https://dc.services.visualstudio.com"
+    ],
+    "login": {
+      "usernameSelector": "input[name=\"username\"]",
+      "passwordSelector": "input[name=\"password\"]",
+      "submitSelector": "button[name=\"submit\"]"
+    },
+    "selectors": {
+      "partnersNav": null,
+      "partnerSearch": "input[placeholder=\"Partner Name or #Default NAS Port\"]",
+      "partnerResult": null,
+      "employeesLink": "a[href]",
+      "employeeTable": null,
+      "employeeRows": null,
+      "usernameWithinRow": null,
+      "pagination": "ul.pagination",
+      "nextPage": "ul.pagination > li:has(> i.fa-angle-right)"
+    }
+  },
+  "corehr": {
+    "searchQueryParam": "filter",
+    "additionalNavigationOrigins": ["https://excitel-prerelease.eu.auth0.com"],
+    "additionalWriteOrigins": [
+      "https://excitel-prerelease.eu.auth0.com",
+      "https://dc.services.visualstudio.com"
+    ],
+    "login": {
+      "usernameSelector": "input[name=\"username\"]",
+      "passwordSelector": "input[name=\"password\"]",
+      "submitSelector": "button[name=\"submit\"]"
+    },
+    "selectors": {
+      "partnerEmployeesNav": "[data-id=\"partner-employees-menu\"], #nav",
+      "searchBy": "[data-id=\"search-by-dropdown-display-value-container\"]",
+      "searchByValue": "[data-id=\"search-by-display-value\"]",
+      "usernameOption": "[data-id=\"search-by-option-username\"], [role=\"option\"]",
+      "searchInput": "[data-id=\"partner-employees-search-input\"], [data-id=\"tenant-employees-search-input\"]",
+      "rows": "[data-id^=\"partner-employees-body-row-\"], [data-id^=\"tenant-employees-body-row-\"]",
+      "usernameCell": "[data-id=\"partner-employees-body-column-user-name\"], [data-id=\"tenant-employees-body-column-user-name\"]",
+      "detailUsername": "[data-id=\"partner-employee-username\"], [data-id=\"detail-username\"]",
+      "permissionsTab": "[data-id=\"permissions-tab\"], #permissions",
+      "statusValue": "[data-id=\"status-form-value\"]",
+      "statusEdit": "[data-id=\"status-form-edit-icon\"]",
+      "statusSelect": null,
+      "inactiveOption": "[data-id=\"status-form-dropdown-option-2\"], [role=\"option\"]",
+      "submitBar": "[data-id=\"partner-employee-permissions-submit-bar\"]",
+      "save": "[data-id=\"submit-form\"]"
+    }
+  }
+}
