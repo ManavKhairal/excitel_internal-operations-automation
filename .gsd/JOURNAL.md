@@ -92,3 +92,54 @@ lock: RELEASED
 ```
 
 After verified logout, four completion rows were written to North Changes reverted A1671:C1674. Each exact username appeared once on readback; YES values and native dates were verified, and neighboring values were preserved. No task errors were recorded. Evidence: `output/2026-10-28T02-49-46-625Z-deposit-north-four-users-approved-apply/report.json` and `sheet-verification.json` in that directory. General production CLI write gates remain unchanged.
+
+## 2026-10-28 — Workforce access implementation and approved staging test
+
+The user supplied the Portal/Workforce/Sales/User Groups flow and approved testing the provided account in both tenants, continuing the other tenant if it is missing in one. Work was performed on local `feature/workforce-access`; no commit or push was requested. Independent Workforce credential fields were initialized once in ignored `.env`, with placeholders in `.env.example`.
+
+Read-only staging inspection verified the actual User Groups menu, distinct first groups per tenant, stable group IDs, username search and full-group PUT schema. A schema-inspection PUT was intercepted and aborted before transmission. Runtime request guards permit exactly one requested candidate addition while retaining every existing member and original group property. Navigation remains staging-only.
+
+Live findings and corrections:
+
+- Regional Auth0 client scripts require their reviewed CDN origin. Optional third-party avatars remain blocked without invalidating a task.
+- HTTP redirects in the first offline fixture could bypass later route interception. The fixture now uses new document navigations and fulfills all application responses locally.
+- A successful North PUT retained the Save footer. The old wait stopped the run without another save. Completion now depends on fresh persisted-group readback, with a regression for a retained footer.
+- Available-user search can omit already-assigned users. Existing access is now checked from persisted membership first, with a regression for exclusion from search.
+
+Actual final verification:
+
+```text
+npm run check
+JavaScript syntax checks passed.
+npm test
+# tests 96
+# pass 96
+# fail 0
+```
+
+Live preview reconciled North as ALREADY_MEMBER and South as WOULD_GRANT_ACCESS. The final apply skipped North and saved South once, returning COMPLETED with SIGNED_OUT_VERIFIED and CLOSED. Combined write audits prove one dispatched save per tenant and no repeated North save. Existing group members and other properties were protected by the outgoing request guard, and South readback verified preservation explicitly.
+
+Evidence: `output/2026-10-28T04-52-50-986Z-workforce-new.agent1/completion-report.json`, its `report.json`, the North reconciliation preview `output/2026-10-28T04-51-57-278Z-workforce-new.agent1/report.json`, and `.state/workforce-full-test-results.log`. Current code, credential separation, commands and missing-tenant behavior are documented in `docs/workforce-access.md` and `PROJECT_HANDOFF.md`.
+
+## 2026-10-28 — Workforce grant/remove support
+
+The user requested keeping both giving and removing access in the Workforce task. Added explicit `--action grant|remove`, retaining grant as the compatible default. Removal unchecks only the exact persisted member of the selected first Sales group, saves once and verifies absence plus preservation after reload. Already-absent members skip; missing-user continuation remains per tenant. Default-user removal is blocked until a separate reassignment is supplied. Action is recorded in reports, summaries and the one-use outgoing-request scope.
+
+Actual validation:
+
+```text
+node --test --test-concurrency=1 tests/workforce.test.mjs
+# tests 30
+# pass 30
+# fail 0
+npm run check
+JavaScript syntax checks passed.
+npm test
+# tests 107
+# pass 107
+# fail 0
+```
+
+The live staging command used `--action remove` without `--apply`. Both tenants returned WOULD_REMOVE_ACCESS with before/after membership true, zero Save attempts and zero dispatched writes. Cleanup: SIGNED_OUT_VERIFIED / CLOSED. No live access was revoked. Offline tests exercised actual checked-checkbox removal and PUT guards in both tenants, preservation, preview, missing/absent users, default-user blocking and uncertain save behavior without a repeated PUT.
+
+Evidence: `.state/workforce-removal-test-results.log`, `.state/workforce-grant-remove-full-tests.log`, and `output/2026-10-28T05-04-51-729Z-workforce-new.agent1/report.json`. Documentation and handoff were updated. Changes remain local on the Workforce branch.

@@ -1,4 +1,24 @@
-# Current validation: approved North post-save retest (2026-10-28)
+# Current validation: Workforce grant and remove actions (2026-10-28)
+
+`npm run check` passed. The full `npm test` suite passed **107 tests, 0 failures**, comprising the original 77 ERP/deposit regressions and 30 Workforce tests. Existing grant commands remain compatible; `--action grant` is the default and removal requires explicit `--action remove`. Both actions remain preview-only unless `--apply` is supplied.
+
+Offline browser tests verify removal in both tenants, exact-member selection from the unfiltered selected-members dropdown, preservation of other members/settings, unchanged membership in preview, already-absent skips, unavailable-user continuation in either tenant, default-user protection and uncertain saves without replay. Request interception rejects extra removals/additions, member edits, wrong action/tenant and unrelated group-property changes. Reports and write audits include the selected action.
+
+The [live staging removal preview](output/2026-10-28T05-04-51-729Z-workforce-new.agent1/report.json) completed with `WOULD_REMOVE_ACCESS` in both tenants, **0 Save attempts / 0 dispatched writes**, unchanged before/after membership and verified logout. Removal Save behavior was tested offline; **no live access was revoked** for this feature addition. Earlier grant live evidence remains below.
+
+# Previous validation: Workforce staging access (2026-10-28)
+
+`npm run check` passed; the full `npm test` suite passed **96 tests, 0 failures**: the existing 77 regressions plus 19 Workforce tests. New coverage includes both tenants, distinct first-group identities, exact usernames versus prefix matches, missing-user continuation in either tenant, existing membership, preservation of other members/properties, blocked out-of-scope PUTs, uncertain saves without replay, tenant/environment guards, regional login assets, logout and CLI dispatch.
+
+Live staging Portal → Workforce → tenant → Sales → User Groups navigation was inspected. The correct menu is `user-groups-menu`, distinct from the supplied CAF Counters HTML. Separate Workforce credentials were initialized locally from Procare once; the runtime uses its own fields and the browser remains visible.
+
+The approved `new.agent1` test completed for North and South: **one membership PUT per tenant**, persisted membership verified, existing group properties/members preserved by the request guard, and Portal/Workforce logout verified. The [consolidated completion report](output/2026-10-28T04-52-50-986Z-workforce-new.agent1/completion-report.json) links the original North save, fresh verification and final South save. The [final CLI report](output/2026-10-28T04-52-50-986Z-workforce-new.agent1/report.json) records North `ALREADY_MEMBER`, South `ACCESS_GRANTED_VERIFIED`, status `COMPLETED`, no blocked functional requests and verified logout.
+
+Two live UI assumptions were corrected with regressions: the Save footer can remain visible after a successful PUT, and the available-user search may exclude users already assigned to the group. Completion now uses fresh persisted-group readback; existing members are detected from that group before searching available candidates. The first North save was reconciled from a fresh read and never repeated. Login resources also require the reviewed regional Auth0 CDN; optional external avatars remain blocked without failing the task.
+
+Workforce changes are saved in a local checkpoint on `feature/workforce-access`; GitHub push remains pending. ERP and deposit application workflows were not edited or executed during Workforce validation. Production Workforce URLs remain blocked by configuration/origin validation.
+
+# Previous validation: approved North post-save retest (2026-10-28)
 
 After the user manually reset the two approved deposits and removed the completion entry, a fresh North-only run confirmed exact source-sheet membership, no South membership, no existing completion entry, and refundable=0 on both deposits. The visible browser saved each deposit once, verified both persisted values as 1, verified the final complete record set, logged out and required login again. Report status: **COMPLETED**, **2 save attempts / 2 save dispatches / 2 verified deposits**.
 

@@ -9,8 +9,8 @@ This is the resume point for the project. The user asked to leave the working fu
 - **ERP employee deactivation works in staging**, including Inactive/Terminated partner support, automatic employee pagination, verified deactivation and logout.
 - **Deposit refundability has completed approved North production runs**, including multiple usernames, verified saves, logout and completion-sheet entries. The duplicate Edit inline problem is fixed and verified live.
 - **Important distinction:** live deposit runs used scoped local execution helpers plus the connected Google Sheets tools. The ordinary deposit CLI still supports offline demonstrations and blocks general production writes. A fully standalone production deposit runner is pending.
-- **Next feature requested by the user: Workforce access management / giving rights.** No Workforce code, configuration or branch exists yet. Obtain the actual manual process before designing its permissions workflow.
-- **The deposit foundation and multi-task dispatcher are saved in the local checkpoint commit containing this handoff**, titled `Add modular deposit refundability workflow and project handoff`. Pushing that checkpoint to GitHub remains pending; no push was requested for this checkpoint.
+- **Workforce access is now implemented on `feature/workforce-access` for staging.** The task supports granting or removing exact membership in the first Sales User Group in North, South or both tenants, using `--action grant|remove`. Grant remains the default; removal is explicit. Missing users in one tenant do not prevent processing the other. See [the Workforce guide](docs/workforce-access.md) and current validation below.
+- **The deposit foundation checkpoint `db3d5ff` has been pushed to `origin/feature/deposit-refundability`.** Workforce was branched from that saved foundation; Workforce is now saved in the local checkpoint containing this handoff, titled `Add staging Workforce access grant and removal automation`. Its GitHub push remains pending.
 - No previously requested user update remains unfinished. Historical report usernames and local helper scripts are not a new execution queue.
 
 ## Repository and branches
@@ -22,22 +22,22 @@ Local folder: `/home/manav/Downloads/corehr-staging-automation`. The folder and 
 | Branch / reference | State at this handoff | Purpose / next action |
 | --- | --- | --- |
 | `main` | Commit `984ef2f`; stable ERP baseline | Preserve as the known working ERP version. |
-| `feature/deposit-refundability` | Current branch; local checkpoint commit containing this document, titled `Add modular deposit refundability workflow and project handoff` | Multi-task foundation, deposit module, regressions and handoff saved locally. Push remains pending. |
-| `feature/workforce-access` | Proposed name only; **not created** | Future branch for Workforce rights management, after preserving the current work and choosing its committed starting point. |
+| `feature/deposit-refundability` | Commit `db3d5ff`, pushed to its origin branch | Saved multi-task/deposit foundation; preserve it while developing Workforce. |
+| `feature/workforce-access` | Current branch; local checkpoint containing this handoff, based on `db3d5ff` | Staging grant/remove automation, documentation and 107 passing regressions saved locally. GitHub push pending. |
 | `erp-deactivation-stable-2026-10-27` | Existing tag at `984ef2f` | Recovery point for the ERP automation before the local multi-task expansion. |
 | `v1.0.0` | Existing tag at `aadaf06` | Earlier initial backup. |
 
 There is no separate ERP feature branch in the current branch list: its stable implementation is on `main` and the ERP recovery tag.
 
-The locally recorded `origin/main` and `origin/feature/deposit-refundability` still point to `984ef2f`. No remote fetch or push was performed for this checkpoint. The local commit is not yet backed up on GitHub. To identify its hash without embedding a commit's own hash in its contents, use `git log -1 --format='%h %s' -- PROJECT_HANDOFF.md`.
+The locally recorded `origin/main` remains at the stable ERP baseline `984ef2f`. The deposit checkpoint was pushed and its remote hash verified as `db3d5ff`. The Workforce branch was created from that checkpoint and committed locally at the user's request. No Workforce merge or push was performed by this checkpoint.
 
-This checkpoint includes the dispatcher, preserved ERP CLI, deposit modules and configuration, fixtures, tests, documentation and development notes. Existing credentials, sessions and production reports remain excluded. Inspect `git status` when resuming before switching branches or changing the checkpoint.
+The pushed checkpoint includes the dispatcher, preserved ERP CLI, deposit modules, fixtures, tests and handoff. The Workforce implementation is saved in its separate local feature commit. Credentials, sessions and production reports remain excluded from Git. Inspect `git status` before switching branches.
 
 ## Project foundation
 
 - Node.js **22+**, JavaScript ES modules and Playwright; no new runtime dependencies were added for the deposit foundation.
 - [src/cli.mjs](src/cli.mjs) dispatches through [src/task-registry.mjs](src/task-registry.mjs).
-- Registered task IDs: `erp-deactivation` and `deposit-refundability`. ERP remains the default when `--task` is omitted.
+- Registered task IDs: `erp-deactivation`, `deposit-refundability` and `workforce-access`. ERP remains the default when `--task` is omitted.
 - The original ERP CLI was moved to [src/erp-cli.mjs](src/erp-cli.mjs), preserving its working behavior.
 - Deposit business logic is separate from CLI/browser/spreadsheet adapters, so later approved triggers can call it without parsing terminal output.
 - Reports/checkpoints are local JSON/CSV, with screenshots where applicable. There is a local exclusive run lock, not a distributed scheduler or cross-machine locking system.
@@ -193,30 +193,50 @@ These items can be scheduled later. The user's next feature priority is Workforc
 
 ## Feature 3 — Workforce access / giving rights
 
-**Status:** next requested feature; not implemented. Proposed task ID: `workforce-access`. Proposed branch: `feature/workforce-access`.
+**Status:** grant/remove support implemented on the local `feature/workforce-access` branch. Granting has live staging verification; removal Save behavior has offline browser/request-guard coverage and the new action passed a read-only staging preview. No live access was revoked for this addition. The user supplied the manual steps and authorized grant testing `new.agent1` in **both tenants**; that membership remains verified in both. If absent in one, continue the other and report the missing tenant at the end. No production Workforce work is authorized.
 
-When the user resumes, collect the following before implementing:
+The workflow signs in through staging Portal, chooses Workforce, selects the explicit tenant, opens Sales → User Groups, and selects the first group by position. It binds that group's actual name and stable ID before opening the Users field. The user-supplied CAF Counters HTML was inconsistent with the requested menu; live inspection confirmed a separate `user-groups-menu` and the implementation uses that.
 
-- Application URL and intended environment; login/SSO/MFA and logout steps.
-- Exact manual navigation, search and user-selection steps, with screenshots or relevant HTML where needed.
-- The unique input identifier: username, employee code or other exact key.
-- The exact rights/roles to grant, how an authorized request specifies them, and any environment/tenant restrictions.
-- Existing-rights behavior: skip already-granted rights; confirm what must be preserved. Do not infer additional rights or remove unrelated access.
-- Missing users, duplicate results, inactive accounts, unavailable roles, rejected saves and other known error cases.
-- The final Save action and how to verify persistence after reloading/reopening the exact account.
-- A suitable test account and allowed test scope, plus expected report/completion requirements.
+Persisted group membership is checked first because the available-user search can exclude already-assigned users. New candidates are checked in both the completed tenant lookup and the scoped Users dropdown. `--action grant` skips existing members; `--action remove` skips already-absent membership. Missing users are reported per tenant. Explicit `--apply` checks or unchecks only the requested user and saves once. The outgoing group update must preserve every other member, group name, default user and other properties, and add or remove only the requested member. The group default user cannot be removed without a separate reassignment. Reload/readback verifies persistence and preservation; a visible Save footer does not prove the save failed. An uncertain save stops further writes without retrying. Logout is verified for Workforce and Portal before closing the browser.
 
-Recommended incremental implementation after the manual process is understood:
+Separate `WORKFORCE_USERNAME` and `WORKFORCE_PASSWORD` fields were added to `.env` and initialized once from Procare as requested. Future password changes are independent; no fallback to Procare is used at runtime. Only placeholders belong in `.env.example`.
 
-1. Push the local checkpoint when requested, then choose a committed multi-task starting point for the Workforce branch.
-2. Add a separate Workforce workflow and application adapter. Reuse the task registry, useful browser/auth utilities, logging, reporting and cleanup patterns; avoid changing unrelated ERP/deposit modules.
-3. Start with a visible, read-only lookup/current-rights preview. Add explicitly selected saves only after identity, permission mapping and verification are proven.
-4. Require exact identity, one save attempt per intended change, persisted-rights verification, already-granted skips, reports and verified logout.
-5. Test failure and ambiguous-match cases locally, then perform a small authorized test run before broader use.
+Commands:
 
-Possible files, **proposals only**: `src/tasks/workforce-access.mjs`, `src/integrations/workforce.mjs`, `src/workforce-cli.mjs`, `config/workforce-access.json`, and task-specific tests/docs. Register only `workforce-access` centrally; do not put Workforce logic into the ERP or deposit workflow.
+```bash
+# Read-only staging preview
+npm start -- --task workforce-access --username new.agent1 --tenant both
 
-A future command could use `npm start -- --task workforce-access ...`, but that task ID is not registered today. Exact arguments depend on the manual specification.
+# Explicitly approved staging save and verification
+npm start -- --task workforce-access --username USERNAME --tenant both --action grant --apply
+
+# Preview removal; add --apply only for an approved membership removal
+npm start -- --task workforce-access --username USERNAME --tenant both --action remove
+```
+
+The required tenant option accepts north, south or both, with Delhi/DEL and Hyderabad/HYD aliases. The browser is visible by default. Staging origins are reviewed and validated; a production rollout requires a separate change and tests.
+
+Files:
+
+- [src/workforce-cli.mjs](src/workforce-cli.mjs): inputs, independent credentials, lock and reports.
+- [src/tasks/workforce-access.mjs](src/tasks/workforce-access.mjs): reusable tenant/user workflow.
+- [src/integrations/workforce.mjs](src/integrations/workforce.mjs): UI navigation, membership identity, payload guard, persistence verification and logout.
+- [config/workforce-access.json](config/workforce-access.json): staging URLs and browser settings.
+- [tests/workforce.test.mjs](tests/workforce.test.mjs) and [tests/workforce-fixture.mjs](tests/workforce-fixture.mjs): isolated UI, request-scope, missing-user, uncertain-save and CLI tests.
+- [docs/workforce-access.md](docs/workforce-access.md): complete commands, scope and report outcomes.
+
+Current task scope is granting/removing membership in the first Sales User Group, selected by `--action grant|remove`. Removing membership is not account deactivation or a blanket removal of access from other groups. Additional roles, different group selection, production URLs and email/Zendesk approval retrieval need their own supplied requirements. Follow the latest validation record before relying on this development branch.
+
+Live evidence: [Workforce completion report](output/2026-10-28T04-52-50-986Z-workforce-new.agent1/completion-report.json) and [final CLI report](output/2026-10-28T04-52-50-986Z-workforce-new.agent1/report.json). The first North save succeeded but the earlier footer-visibility wait timed out. A fresh read reconciled it; North was skipped on the final run while South was added and verified. Both UI behaviors now have regressions. No North save was replayed.
+
+Removal evidence: [read-only staging removal preview](output/2026-10-28T05-04-51-729Z-workforce-new.agent1/report.json), both tenants `WOULD_REMOVE_ACCESS`, zero Save attempts/dispatched writes, membership unchanged and logout verified. A future actual removal test needs a specified approved target; do not treat the earlier grant test account as a standing revocation instruction.
+
+Next steps after the staging demonstration:
+
+- Review the run reports and demonstration with the user.
+- Push the Workforce checkpoint when requested; the deposit branch remains its saved parent. The local feature commit is complete.
+- Obtain separate authorization and reviewed URLs before any production rollout.
+- Continue the pending standalone deposit/Google authentication work separately when prioritized.
 
 ## Longer-term backlog
 
@@ -230,20 +250,23 @@ None of these integrations has been implemented or authorized for live execution
 
 ## Validation and resumption checklist
 
-Checkpoint validation: **77 tests passed, 0 failed**, and `npm run check` passed. This includes ERP regressions and the post-save SELECT/UPDATE duplicate-control tests. The approved North executions provide the live deposit evidence above. The offline checks were rerun before this commit; no live automation or application changes were performed for the checkpoint.
+Latest validation: **107 tests passed, 0 failed**, and `npm run check` passed. This includes the earlier 77 ERP/deposit regressions and 30 Workforce tests covering grant and removal. The approved deposit/grant executions and read-only removal preview provide separate live evidence above. The saved deposit checkpoint originally passed 77 tests; current Workforce development adds the remaining coverage.
 
 Additional context: [TEST_RESULTS.md](TEST_RESULTS.md) and [.gsd/JOURNAL.md](.gsd/JOURNAL.md).
 
 - [ ] Read this handoff and inspect `git status` before editing or switching branches.
 - [x] Review and commit the feature foundation, tests and this handoff locally on `feature/deposit-refundability`.
-- [ ] Push the local checkpoint to GitHub when requested; it has not been pushed by this operation.
+- [x] Push the deposit checkpoint `db3d5ff` to GitHub and verify the remote branch.
+- [x] Create `feature/workforce-access` from that saved checkpoint.
+- [x] Commit the Workforce grant/remove feature, documentation and regressions locally.
+- [ ] Push the Workforce checkpoint to GitHub when requested.
 - [ ] Preserve the ERP stable tag. Remember that current `main` does not yet contain the local task registry/deposit foundation.
-- [ ] Choose the Workforce base: merge the reviewed foundation to `main`, or branch from a committed deposit snapshot if that feature remains in progress. Do not start from the old ERP-only tree expecting the local modules to be present.
-- [ ] Gather the Workforce manual process and agree on the first test scope.
+- [x] Use the committed deposit foundation as the Workforce base; `main` remains the older ERP baseline.
+- [x] Gather Workforce steps; test scope agreed as `new.agent1` in both staging tenants, continuing if absent in one.
 - [ ] Keep browser visibility, preview defaults, exact matching, verified saves and logout behavior intact.
 - [ ] After future code changes, run appropriate regressions; the existing commands are `npm run check` and `npm test`.
 - [ ] Refresh live identity, eligibility and authorization before a new execution. Never use historical reports or this checklist as permission to repeat a production change.
 
-Credentials remain only in the ignored local `.env`: `PROCARE_USERNAME/PASSWORD`, `COREHR_USERNAME/PASSWORD`, `PMA_NORTH_USERNAME/PASSWORD` and `PMA_SOUTH_USERNAME/PASSWORD`. No passwords, Google tokens, cookies or phpMyAdmin session tokens belong in this handoff or Git.
+Credentials remain only in the ignored local `.env`: `PROCARE_USERNAME/PASSWORD`, `COREHR_USERNAME/PASSWORD`, `PMA_NORTH_USERNAME/PASSWORD` and `PMA_SOUTH_USERNAME/PASSWORD`, and `WORKFORCE_USERNAME/PASSWORD`. No passwords, Google tokens, cookies or phpMyAdmin session tokens belong in this handoff or Git.
 
-The initial handoff request created only this Markdown file. The subsequent checkpoint request updated this document and committed the existing feature work with a detailed commit message. No workflow code was changed for the checkpoint, no branches were created or merged, and no live application changes were performed.
+The initial handoff created only this document. The later deposit checkpoint was committed and pushed; Workforce was then branched from it and implemented in response to the supplied steps. The Workforce grant/remove changes are now committed locally; their GitHub push remains pending. Runtime evidence and credentials stay local; do not rerun historical apply targets without fresh authorization.
