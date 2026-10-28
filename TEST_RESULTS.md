@@ -1,4 +1,42 @@
-# Current validation: Inactive partner support (2026-10-27)
+# Current validation: approved North post-save retest (2026-10-28)
+
+After the user manually reset the two approved deposits and removed the completion entry, a fresh North-only run confirmed exact source-sheet membership, no South membership, no existing completion entry, and refundable=0 on both deposits. The visible browser saved each deposit once, verified both persisted values as 1, verified the final complete record set, logged out and required login again. Report status: **COMPLETED**, **2 save attempts / 2 save dispatches / 2 verified deposits**.
+
+The previous failure condition occurred after both saves: two visible Edit inline links, with SELECT and UPDATE statements inside the same result_query. The shared selector chose SELECT each time, and the subsequent verification completed in that same browser session. No separate recovery session or repeated save was required. This confirms the selector fix against the live North UI for the approved one-user scope.
+
+After verified logout, the connected Google Sheets tools recorded exactly one completion entry, then re-read its username, YES value, native date and neighboring cells. Completion uniqueness: **1 match**; sheet writes: **1**. The [private execution report](output/2026-10-27T19-08-05-378Z-deposit-north-yogesh-selector-retest/report.json) contains per-save control observations, readback evidence, logout and sheet confirmation. This scoped execution does not enable general production CLI writes.
+
+# Previous validation: phpMyAdmin post-save query controls (2026-10-28)
+
+The duplicate “Edit inline” failure was reproduced offline before the fix: after one grid save, lookup stopped with `AMBIGUOUS_CONTROL` and `Edit inline SQL: 2 visible matches`. The fixture now mirrors phpMyAdmin's grid code: an UPDATE `.sqlOuter` and `.tools` pair is appended inside the same `.result_query` as the original SELECT.
+
+The shared selector now binds the visible SELECT block to its immediately following tools. It is used by the reusable adapter and local inspection/apply helpers. The lookup's freshness check and result-status read are scoped to that SELECT result. Multiple visible SELECT blocks remain an error; no first-match fallback or save retry was added.
+
+After the fix, both targeted regressions passed. The two-deposit case confirms one save per deposit, both post-save lookups, five SELECT-only query-editor openings, one logout and one verified completion entry. The ambiguity case confirms zero edits, saves or completion appends. Existing non-persistence, uncertain-save, production-write rejection and ERP regressions also pass.
+
+`npm run check` passed. Full `npm test` output: **77 tests, 77 passed, 0 failed**. The local inspection/apply helpers also passed `node --check`. All validation for this fix was offline; no production database or Google Sheets changes were performed, and general production CLI writes remain disabled.
+
+# Previous validation: North read-only inspection (2026-10-27)
+
+An authorized live inspection checked exact username membership in the two source tabs through the connected Google account, authenticated to North phpMyAdmin, read schema metadata and the selected deposits, and verified logout. The [private preview report](output/2026-10-27T18-11-11-080Z-deposit-north-readonly-inspection/report.json) records two eligible deposit rows, zero save attempts, and zero sheet writes. No data editors were opened.
+
+North schema metadata confirms `deposit_id` is the non-null bigint primary key. The joined lookup returns exact username identity but disables grid editing in phpMyAdmin 4.4.15.10. A single-table SELECT restricted to those exact deposit IDs and subscriber ID exposes grid controls; production editing must account for this before future enablement. Automatic Google authorization and the inline editor/save behavior remain unverified. South was not accessed, and live operations remain disabled in configuration.
+
+The inspection also exposed two DOM differences: query display omits the final semicolon, and action headings span four body columns. Both are handled in the parser/editor mapping and covered by added offline regressions. `npm run check` and the full `npm test` suite passed: **75 passed, 0 failed**. Earlier inspection attempts encountered asynchronous loading/server notices; the final lookup and view inspection completed with verified logout. Browser traffic was limited to authentication, read pages, and allowlisted SELECT statements.
+
+# Previous validation: deposit task foundation and task selection (2026-10-27)
+
+`npm run check` and the full `npm test` suite passed: **73 passed, 0 failed**. Tests execute offline; no production database or live Google Sheets changes were made.
+
+The original ERP command is preserved in `src/erp-cli.mjs` and selected by default through a static registry. Both legacy invocation and explicit `--task erp-deactivation` pass the CLI tests. The existing preview, apply, pagination, partner eligibility, and logout regressions continue to pass.
+
+The deposit workflow has 22 business/adapter tests and four CLI tests. Coverage includes: exact sheet membership; missing/conflicting tenants and sheet-read failures before database access; mixed deposit eligibility; all-already-refundable records; multiple usernames and tenant-session reuse; exact record identity and generated SELECT queries; fresh-query verification; unpersisted and uncertain saves without another Enter; partial result pages; changed flags; partial completion; logout failure; independent sheet recording; duplicate prevention; and lost append-response recovery without another database write. CLI tests verify reports, lock release, demo preview/apply, and rejection of production preview/apply before external access.
+
+The final two-tenant offline demonstration completed with two verified simulated updates, two skipped covered/bundled rows, one already-refundable row, one logout per tenant, and two verified in-memory sheet entries. Evidence: [demo report](output/2026-10-27T17-20-45-996Z-deposit-demo-demo.north/report.json). The final report and demo state are private ignored runtime files.
+
+Production preview remains disabled pending standalone Google authorization and verified phpMyAdmin primary-key/editor/results/pagination details. Database editing and Google appends are independently blocked in live adapters. Fixture selectors and row keys are not presented as verified production selectors. Setup and current limitations are documented in [deposit task guide](docs/deposit-refundability.md).
+
+# Previous validation: Inactive partner support (2026-10-27)
 
 `npm run check` and `npm test` passed: **46 passed, 0 failed**.
 
