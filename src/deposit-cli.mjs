@@ -12,11 +12,11 @@ export async function saveDepositReport(directory, report) {
   for (const result of report.results) for (const row of result.rows) counts[row.outcome] = (counts[row.outcome] || 0) + 1;
   report.summary = counts;
   await writeJson(path.join(directory, 'report.json'), report);
-  const fields = ['username', 'tenant', 'recordKey', 'subscriberId', 'isCovered', 'isBundled', 'before', 'after', 'saveAttempted', 'outcome', 'sheetStatus', 'message'];
+  const fields = ['username', 'tenant', 'targetRefundable', 'recordKey', 'subscriberId', 'isCovered', 'isBundled', 'before', 'after', 'saveAttempted', 'outcome', 'sheetStatus', 'message'];
   const lines = [fields.map(csvCell).join(',')];
   for (const result of report.results) {
     for (const row of result.rows.length ? result.rows : [{}]) {
-      const values = { ...row, username: result.username, tenant: result.tenant, recordKey: row.key,
+      const values = { ...row, username: result.username, tenant: result.tenant, targetRefundable: result.targetRefundable ?? 1, recordKey: row.key,
         outcome: row.outcome || result.outcome, sheetStatus: result.sheet.status, message: result.error?.message || result.sheet.error?.message || '' };
       lines.push(fields.map(field => csvCell(values[field])).join(','));
     }
@@ -25,7 +25,7 @@ export async function saveDepositReport(directory, report) {
 }
 export async function main(argv = process.argv.slice(2)) {
   const { values: args } = parseArgs({ args: argv, options: {
-    username: { type: 'string', multiple: true }, tenant: { type: 'string' },
+    username: { type: 'string', multiple: true }, tenant: { type: 'string' }, refundable: { type: 'string', default: '1' },
     demo: { type: 'boolean', default: false }, apply: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false }
   }, strict: true });
@@ -36,6 +36,10 @@ Offline preview (synthetic records only):
   npm start -- --task deposit-refundability --demo --username demo.north
 Offline save and sheet-recording simulation:
   npm start -- --task deposit-refundability --demo --username demo.north --apply
+Mark non-refundable (1 -> 0), offline simulation:
+  npm start -- --task deposit-refundability --demo --username demo.north --refundable 0 --apply
+--refundable 1 (default): 0 -> 1; record in Changes reverted.
+--refundable 0: 1 -> 0; record username in Managed users.
 Multiple inputs: repeat --username. Optional --tenant north|south (Delhi/DEL/Hyderabad/HYD accepted).
 
 Default is preview. --demo never accesses company systems or Google.
@@ -49,7 +53,7 @@ Without --task, existing ERP commands keep their original behavior.`);
   const config = JSON.parse(await fs.readFile(path.join(root, 'config/deposit-refundability.json'), 'utf8'));
   for (const key of ['timeoutMs', 'maxUsers', 'maxDepositsPerUser']) if (!Number.isInteger(config[key]) || config[key] <= 0) throw new StopError('CONFIG', `${key} must be a positive integer.`);
   if (config.headless !== undefined && typeof config.headless !== 'boolean') throw new StopError('CONFIG', 'headless must be true or false.');
-  const input = validateInput({ usernames: args.username, tenant: args.tenant, apply: args.apply }, config.maxUsers);
+  const input = validateInput({ usernames: args.username, tenant: args.tenant, apply: args.apply, refundable: args.refundable }, config.maxUsers);
   // All live gates run BEFORE .env loading, API access or browser creation.
   if (!args.demo) {
     if (input.apply) throw new StopError('LIVE_WRITES_DISABLED', 'Production database and sheet updates are disabled. No external action was attempted.');
@@ -73,6 +77,7 @@ Without --task, existing ERP commands keep their original behavior.`);
       };
     }
     console.log(`MODE: ${input.apply ? 'DEMO APPLY' : 'PREVIEW — no deposit or sheet writes'}`);
+    console.log(`TARGET: refundable=${input.refundable}`);
     const report = await runDepositTask(input, { ...services, config, environment: args.demo ? 'offline-demo' : 'production-preview', checkpoint: value => saveDepositReport(directory, value) });
     for (const result of report.results) {
       console.log(`${result.username}: ${result.outcome}${result.error ? ' — ' + result.error.message : ''}`);

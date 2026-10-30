@@ -9,7 +9,9 @@ export function demoData() {
       'North Tenant': [['User ID', 'ERP name'], ['demo.north', 'Demo North']],
       'South Tenant': [['User ID', 'ERP name'], ['demo.south', 'Demo South']],
       'North Changes reverted': [['Username', 'Refundable', 'Date']],
-      'South Changes reverted': [['Username', 'Refundable', 'Date']]
+      'South Changes reverted': [['Username', 'Refundable', 'Date']],
+      'North Managed users': [['Username']],
+      'South Managed users': [['username']]
     },
     deposits: [
       { username: 'demo.north', key: '101', subscriberId: '10', isCovered: 0, isBundled: 0, refundable: 0 },
@@ -85,7 +87,7 @@ export async function createDemoDatabase(browser, state, tenant, config, options
             result.querySelectorAll('[data-saved-query]').forEach(el=>el.remove());
             const sql=document.createElement('div');sql.className='sqlOuter';sql.dataset.savedQuery='';
             const pre=document.createElement('pre');
-            pre.textContent='UPDATE subscriber_deposit SET refundable = 1 WHERE deposit_id = '+cell.closest('tr').dataset.key;
+            pre.textContent='UPDATE subscriber_deposit SET refundable = '+editor.value+' WHERE deposit_id = '+cell.closest('tr').dataset.key;
             sql.append(pre);
             const tools=document.createElement('div');tools.className='tools';tools.dataset.savedQuery='';
             tools.innerHTML='<a href="#" class="inline_edit_sql">Edit inline</a>';

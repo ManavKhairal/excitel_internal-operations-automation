@@ -16,8 +16,15 @@ export function validateInput(input, maxUsers = 20) {
   if (!Array.isArray(input.usernames) || !input.usernames.length || input.usernames.length > maxUsers) {
     throw new StopError('INPUT', `Provide 1–${maxUsers} usernames.`);
   }
-  return { usernames: [...new Set(input.usernames.map(validUsername))], tenant: input.tenant ? normalizeTenant(input.tenant) : null, apply: input.apply === true };
+  return { usernames: [...new Set(input.usernames.map(validUsername))], tenant: input.tenant ? normalizeTenant(input.tenant) : null, apply: input.apply === true, refundable: normalizeRefundable(input.refundable) };
 }
+export function normalizeRefundable(value = 1) {
+  if (![0, 1, '0', '1'].includes(value)) throw new StopError('INVALID_REFUNDABLE', 'Refundable must be exactly 0 or 1.');
+  return Number(value);
+}
+const outcomes = target => target === 1
+  ? { already: 'ALREADY_REFUNDABLE', preview: 'WOULD_SET_REFUNDABLE', verified: 'REFUNDABLE_VERIFIED' }
+  : { already: 'ALREADY_NON_REFUNDABLE', preview: 'WOULD_SET_NON_REFUNDABLE', verified: 'NON_REFUNDABLE_VERIFIED' };
 export function resolveTenant(username, membership, suppliedTenant) {
   if (typeof membership.north !== 'boolean' || typeof membership.south !== 'boolean') throw new StopError('SHEET_READ_FAILED', 'Both source sheets must be checked successfully.');
   if (membership.north && membership.south) throw new StopError('AMBIGUOUS_TENANT', 'Username is listed in both tenant sheets. Confirm the correct tenant before proceeding.');
@@ -46,16 +53,17 @@ export function validateRows(rows, username, maxRows = 200) {
   if (subscribers.size !== 1) throw new StopError('AMBIGUOUS_SUBSCRIBER', 'The username maps to multiple subscriber IDs.');
   return rows.map(row => ({ ...row, key: String(row.key), subscriberId: String(row.subscriberId), isCovered: Number(row.isCovered), isBundled: Number(row.isBundled), refundable: Number(row.refundable) }));
 }
-const classification = row => row.isCovered || row.isBundled ? 'SKIPPED_COVERED_OR_BUNDLED' : row.refundable === 1 ? 'ALREADY_REFUNDABLE' : 'WOULD_SET_REFUNDABLE';
+const classification = (row, target, status) => row.isCovered || row.isBundled ? 'SKIPPED_COVERED_OR_BUNDLED' : row.refundable === target ? status.already : status.preview;
 const errorInfo = error => ({ code: error.code || 'FAILED', message: error.message.split('\n')[0] });
 
 // Business workflow independent of CLI, browser implementation, and credentials.
 export async function runDepositTask(input, { sheets, openDatabase, config, checkpoint = async () => {}, now = () => new Date().toISOString(), environment = 'production-preview' }) {
   const request = validateInput(input, config.maxUsers);
+  const target = request.refundable, status = outcomes(target);
   if (request.apply && environment !== 'offline-demo') throw new StopError('LIVE_WRITES_DISABLED', 'Production writes are not enabled in this development phase.');
   const report = { schemaVersion: 1, task: 'deposit-refundability', executionId: randomUUID(), environment,
-    mode: request.apply ? 'apply' : 'dry-run', status: 'IN_PROGRESS', startedAt: now(), finishedAt: null,
-    results: request.usernames.map(username => ({ username, tenant: null, outcome: 'NOT_PROCESSED', rows: [], sheet: { status: 'NOT_REQUIRED' } })) };
+    mode: request.apply ? 'apply' : 'dry-run', targetRefundable: target, status: 'IN_PROGRESS', startedAt: now(), finishedAt: null,
+    results: request.usernames.map(username => ({ username, tenant: null, targetRefundable: target, outcome: 'NOT_PROCESSED', rows: [], sheet: { status: 'NOT_REQUIRED' } })) };
   const persist = () => checkpoint(structuredClone(report));
   await persist();
   // Check BOTH source sheets for ALL inputs before opening a database.
@@ -73,31 +81,31 @@ export async function runDepositTask(input, { sheets, openDatabase, config, chec
         const entry = sessions.get(result.tenant);
         database = entry.database; entry.results.push(result);
         const initial = validateRows(await database.lookup(result.username), result.username, config.maxDepositsPerUser);
-        result.rows = initial.map(row => ({ ...row, before: row.refundable, after: row.refundable, saveAttempted: false, outcome: classification(row) }));
+        result.rows = initial.map(row => ({ ...row, before: row.refundable, after: row.refundable, saveAttempted: false, outcome: classification(row, target, status) }));
         await persist();
         for (const row of result.rows) {
-          if (row.outcome !== 'WOULD_SET_REFUNDABLE' || !request.apply) continue;
+          if (row.outcome !== status.preview || !request.apply) continue;
           const currentRows = validateRows(await database.lookup(result.username), result.username, config.maxDepositsPerUser);
           if (initial.map(r => r.key).sort().join(',') !== currentRows.map(r => r.key).sort().join(',')) throw new StopError('RECORD_SET_CHANGED', 'Deposit records changed since preview; stopping this username.');
           const current = currentRows.find(candidate => candidate.key === row.key);
-          if (!current || current.subscriberId !== row.subscriberId || current.isCovered !== row.isCovered || current.isBundled !== row.isBundled || current.refundable !== 0) throw new StopError('RECORD_CHANGED', `Deposit ${row.key} changed before editing.`);
-          const saveOnce = await database.prepareRefundable(current);
+          if (!current || current.subscriberId !== row.subscriberId || current.isCovered !== row.isCovered || current.isBundled !== row.isBundled || current.refundable !== 1 - target) throw new StopError('RECORD_CHANGED', `Deposit ${row.key} changed before editing.`);
+          const saveOnce = await database.prepareRefundable(current, target);
           row.outcome = 'SAVE_STARTED_UNVERIFIED'; row.saveAttempted = true;
           await persist(); // durable checkpoint BEFORE Enter
           await saveOnce(); // one Enter only; never retry a write after uncertainty
           const fresh = validateRows(await database.lookup(result.username), result.username, config.maxDepositsPerUser).find(candidate => candidate.key === row.key);
-          if (!fresh || fresh.subscriberId !== row.subscriberId || fresh.refundable !== 1 || fresh.isCovered !== 0 || fresh.isBundled !== 0) throw new StopError('SAVE_UNVERIFIED', `Deposit ${row.key}: persisted eligible refundable=1 was not verified.`);
-          row.after = 1; row.outcome = 'REFUNDABLE_VERIFIED'; row.verifiedAt = now();
+          if (!fresh || fresh.subscriberId !== row.subscriberId || fresh.refundable !== target || fresh.isCovered !== 0 || fresh.isBundled !== 0) throw new StopError('SAVE_UNVERIFIED', `Deposit ${row.key}: persisted eligible refundable=${target} was not verified.`);
+          row.after = target; row.outcome = status.verified; row.verifiedAt = now();
           await persist();
         }
         result.outcome = request.apply ? 'COMPLETED' : 'PREVIEW_COMPLETED';
-        const changed = result.rows.filter(row => row.outcome === 'REFUNDABLE_VERIFIED');
-        if (changed.length) result.sheet = { status: 'PENDING', date: taskDate(changed.at(-1).verifiedAt, config.timeZone), refundable: 'YES' };
+        const changed = result.rows.filter(row => row.outcome === status.verified);
+        if (changed.length) result.sheet = { status: 'PENDING', date: taskDate(changed.at(-1).verifiedAt, config.timeZone), refundable: target === 1 ? 'YES' : 'NO' };
       } catch (error) {
         const pending = result.rows.find(row => row.outcome === 'SAVE_STARTED_UNVERIFIED');
         if (pending) pending.outcome = 'SAVE_UNVERIFIED';
         result.error = errorInfo(error); result.outcome = 'HALTED_FOR_REVIEW';
-        if (result.rows.some(row => row.outcome === 'REFUNDABLE_VERIFIED')) result.sheet = { status: 'BLOCKED_PARTIAL_RESULT' };
+        if (result.rows.some(row => row.outcome === status.verified)) result.sheet = { status: 'BLOCKED_PARTIAL_RESULT' };
       }
       await persist();
       if (result.outcome === 'HALTED_FOR_REVIEW') break;
@@ -128,13 +136,15 @@ export async function runDepositTask(input, { sheets, openDatabase, config, chec
 
 // For a reviewed sheet-only recovery: no database access or repeated saves.
 export async function recordCompletion(result, sheets, checkpoint = async () => {}) {
+  const target = normalizeRefundable(result.targetRefundable), status = outcomes(target);
   if (result.outcome !== 'COMPLETED' || result.logout !== 'SIGNED_OUT_VERIFIED' || result.closeError ||
-      !result.rows.some(row => row.outcome === 'REFUNDABLE_VERIFIED') ||
-      result.rows.some(row => !['REFUNDABLE_VERIFIED', 'ALREADY_REFUNDABLE', 'SKIPPED_COVERED_OR_BUNDLED'].includes(row.outcome)) ||
+      !result.rows.some(row => row.outcome === status.verified) ||
+      result.rows.some(row => ![status.verified, status.already, 'SKIPPED_COVERED_OR_BUNDLED'].includes(row.outcome) ||
+        (row.outcome !== 'SKIPPED_COVERED_OR_BUNDLED' && row.after !== target)) ||
       !/^\d{4}-\d{2}-\d{2}$/.test(result.sheet.date || '')) throw new StopError('COMPLETION_NOT_VERIFIED', 'Sheet recording requires completed, verified changes and logout.');
   try {
     result.sheet.status = 'APPEND_STARTED_UNVERIFIED'; await checkpoint();
-    result.sheet.status = await sheets.recordCompletion(result.tenant, result.username, result.sheet.date);
+    result.sheet.status = await sheets.recordCompletion(result.tenant, result.username, result.sheet.date, target);
     if (!['RECORDED_VERIFIED', 'ALREADY_RECORDED'].includes(result.sheet.status)) throw new StopError('SHEET_UNVERIFIED', 'Completion entry could not be verified.');
     delete result.sheet.error;
   } catch (error) { result.sheet.status = 'FAILED'; result.sheet.error = errorInfo(error); }

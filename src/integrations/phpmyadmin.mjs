@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { StopError, clean, exactPattern, uniqueVisible, waitFor } from '../utils.mjs';
-import { TENANTS } from '../tasks/deposit-refundability.mjs';
+import { TENANTS, normalizeRefundable } from '../tasks/deposit-refundability.mjs';
 
 // phpMyAdmin displays submitted SELECT statements without their final semicolon.
 const queryText = value => clean(value).replace(/;$/, '');
@@ -105,7 +105,8 @@ export class PhpMyAdmin {
     if (snapshot.error) throw new StopError('RESULT_COLUMNS', snapshot.error);
     return snapshot.rows;
   }
-  async prepareRefundable(expected) {
+  async prepareRefundable(expected, refundable = 1) {
+    const target = normalizeRefundable(refundable), before = String(1 - target);
     this.assertOrigin();
     // Production save support is deliberately unavailable, even if called directly.
     if (this.origin !== 'https://deposit-fixture.invalid') throw new StopError('LIVE_WRITES_DISABLED', 'Production inline editing is disabled until explicitly authorized and reviewed.');
@@ -113,7 +114,7 @@ export class PhpMyAdmin {
     const rows = await this.readTable(table);
     const index = rows.findIndex(row => row.key === expected.key && row.username === expected.username && row.subscriberId === expected.subscriberId);
     if (index < 0 || rows.filter(row => row.key === expected.key).length !== 1) throw new StopError('ROW_IDENTITY', 'Exact deposit record is missing or ambiguous.');
-    if (rows[index].refundable !== '0' || rows[index].isCovered !== '0' || rows[index].isBundled !== '0') throw new StopError('RECORD_CHANGED', 'Deposit is no longer eligible.');
+    if (rows[index].refundable !== before || rows[index].isCovered !== '0' || rows[index].isBundled !== '0') throw new StopError('RECORD_CHANGED', 'Deposit is no longer eligible.');
     const header = await uniqueVisible(table.locator('thead th[data-column="refundable"]'), 'refundable heading', this.timeoutMs);
     const column = await header.evaluate(el => [...el.parentElement.cells].slice(0, el.cellIndex)
       .reduce((offset, cell) => offset + cell.colSpan, 0));
@@ -121,7 +122,8 @@ export class PhpMyAdmin {
     const cell = row.locator(':scope > td').nth(column);
     await cell.dblclick();
     const input = await uniqueVisible(cell.locator(this.inlineEditorSelector), 'refundable inline editor', this.timeoutMs);
-    await input.fill('1');
+    if (await input.inputValue() !== before) throw new StopError('RECORD_CHANGED', 'Inline editor value changed before editing.');
+    await input.fill(String(target));
     let attempted = false;
     return async () => {
       if (attempted) throw new StopError('DUPLICATE_SAVE', 'Enter must not be repeated for this record.');
@@ -129,7 +131,7 @@ export class PhpMyAdmin {
       this.assertOrigin();
       // Recheck the row identity and flags after editing and before Enter.
       const fresh = (await this.readTable(table))[index];
-      if (!fresh || fresh.key !== expected.key || fresh.username !== expected.username || fresh.subscriberId !== expected.subscriberId || fresh.isCovered !== '0' || fresh.isBundled !== '0' || await input.inputValue() !== '1') throw new StopError('RECORD_CHANGED', 'Row changed while the editor was open.');
+      if (!fresh || fresh.key !== expected.key || fresh.username !== expected.username || fresh.subscriberId !== expected.subscriberId || fresh.isCovered !== '0' || fresh.isBundled !== '0' || await input.inputValue() !== String(target)) throw new StopError('RECORD_CHANGED', 'Row changed while the editor was open.');
       await input.press('Enter');
       await waitFor(async () => !await input.isVisible(), { timeoutMs: this.timeoutMs, description: 'inline editor save to finish' });
     };

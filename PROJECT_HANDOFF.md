@@ -247,3 +247,11 @@ Additional context: [TEST_RESULTS.md](TEST_RESULTS.md) and [.gsd/JOURNAL.md](.gs
 Credentials remain only in the ignored local `.env`: `PROCARE_USERNAME/PASSWORD`, `COREHR_USERNAME/PASSWORD`, `PMA_NORTH_USERNAME/PASSWORD` and `PMA_SOUTH_USERNAME/PASSWORD`. No passwords, Google tokens, cookies or phpMyAdmin session tokens belong in this handoff or Git.
 
 The initial handoff request created only this Markdown file. The subsequent checkpoint request updated this document and committed the existing feature work with a detailed commit message. No workflow code was changed for the checkpoint, no branches were created or merged, and no live application changes were performed.
+
+## Deposit bidirectional extension — 30 October 2026
+
+Work is isolated to `feature/deposit-refundability`. The shared deposit task now accepts `--refundable 0|1`; omitted means 1 and preserves the existing workflow. Target 0 changes eligible rows from 1 to 0 and records the exact username in column A of North/South Managed users after verification and logout. Both Managed users layouts were inspected read-only. Existing entries are deduplicated by username; no new columns or removals from other tabs are introduced. Target 1 keeps Changes reverted with Username/YES/Date. Both directions still skip covered/bundled rows and rows already at the target. Reports and sheet-only recovery retain the requested direction.
+
+Use `npm start -- --task deposit-refundability --demo --username demo.north --refundable 0 --apply` for the reverse offline demonstration. General production writes remain disabled; historical live helpers remain scoped to their approved targets and are not converted to reverse executors. This extension does not authorize any live deposit or spreadsheet changes.
+
+Validation: `npm run check` passed; `npm test` passed **92 tests, 0 failures** (including existing ERP regressions, both deposit directions, tenant routing, skipped rows, uncertain saves, duplicate handling and sheet-only recovery). CLI help includes both directions. No live database or spreadsheet writes were performed for this extension.
