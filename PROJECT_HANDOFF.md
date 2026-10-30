@@ -270,3 +270,16 @@ Additional context: [TEST_RESULTS.md](TEST_RESULTS.md) and [.gsd/JOURNAL.md](.gs
 Credentials remain only in the ignored local `.env`: `PROCARE_USERNAME/PASSWORD`, `COREHR_USERNAME/PASSWORD`, `PMA_NORTH_USERNAME/PASSWORD` and `PMA_SOUTH_USERNAME/PASSWORD`, and `WORKFORCE_USERNAME/PASSWORD`. No passwords, Google tokens, cookies or phpMyAdmin session tokens belong in this handoff or Git.
 
 The initial handoff created only this document. The later deposit checkpoint was committed and pushed; Workforce was then branched from it and implemented in response to the supplied steps. The Workforce grant/remove changes are now committed locally; their GitHub push remains pending. Runtime evidence and credentials stay local; do not rerun historical apply targets without fresh authorization.
+
+## Procare subscriber synchronization — 30 October 2026
+
+New task on `feature/procare-subscriber-synchronization`, branched from the committed Workforce foundation (`e184007`). Implemented production North Procare subscriber synchronization with Excel workbook tracking.
+
+- Production synchronization workflow tested and verified against North Procare (`https://procare-del.north.excitel.in`).
+- Excel integration (`scripts/sync-workbook.py` and `src/integrations/sync-workbook.mjs`) reads subscriber usernames from Column B and writes timestamped verified outcomes directly to Column J (`Status`).
+- Processed 100% of the workbook `/home/manav/Downloads/Exsiting users of Deluxe Cable Network - Char Chaman (1).xlsx` (270 rows):
+  - **202 subscribers**: `SYNCHRONIZED — Procare response verified`
+  - **68 subscribers**: `USER_NOT_FOUND` (no match in Procare search)
+  - **0 pending records** remaining.
+- Validation: `npm run check` clean, full test suite passed **126/126** offline unit & integration tests.
+

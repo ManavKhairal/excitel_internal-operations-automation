@@ -2,7 +2,8 @@ import { StopError } from './utils.mjs';
 export const taskRegistry = Object.freeze({
   'erp-deactivation': () => import('./erp-cli.mjs'),
   'deposit-refundability': () => import('./deposit-cli.mjs').then(module => module.main()),
-  'workforce-access': () => import('./workforce-cli.mjs').then(module => module.main())
+  'workforce-access': () => import('./workforce-cli.mjs').then(module => module.main()),
+  'procare-subscriber-synchronization': () => import('./subscriber-sync-cli.mjs').then(module => module.main())
 });
 export function selectTask(argv) {
   let task = 'erp-deactivation', specified = false;
