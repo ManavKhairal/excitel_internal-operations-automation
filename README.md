@@ -1,4 +1,15 @@
-# Procare to CoreHR: staging employee deactivation
+# Internal operations automation
+
+Select a task with `--task`:
+
+| Task | Command | Availability |
+| --- | --- | --- |
+| ERP employee deactivation | `npm start -- --partner "PARTNER"` or `--task erp-deactivation` | Staging; preview by default. |
+| Procare subscriber synchronization | `npm start -- --task procare-subscriber-synchronization --workbook /path/to/users.xlsx` | North production; preview by default, `--apply` after review. |
+
+The [Procare subscriber synchronization task](docs/procare-subscriber-synchronization.md) processes exact usernames from a reviewed North sheet snapshot or Excel workbook. It uses separate `PROCARE_SYNC_USERNAME` and `PROCARE_SYNC_PASSWORD` credentials. Preview makes no synchronization request.
+
+## ERP employee deactivation
 
 A local Node.js + Playwright project for the workflow you described:
 
@@ -13,7 +24,7 @@ A local Node.js + Playwright project for the workflow you described:
 9. Write per-user results, including already-inactive, not-found, failed and unprocessed users.
 10. Log out of CoreHR and Procare using their UI menus, verify that reopening each app requires login, and close both browsers.
 
-**Current scope:** manual trigger, staging only. No Zendesk, Gmail, AI API, Joget, production switch, or database updates are included. No extra AI subscription/API key is needed to run this script.
+**ERP scope:** manual trigger, staging only. No Zendesk, Gmail, AI API, Joget, production switch, or database updates are included. No extra AI subscription/API key is needed to run this script.
 
 ## Validation status and known gaps
 

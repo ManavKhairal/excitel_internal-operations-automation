@@ -1,0 +1,23 @@
+{
+  "environment": "production",
+  "tenant": "north",
+  "origin": "https://procare-del.north.excitel.in",
+  "authOrigin": "https://excitel.eu.auth0.com",
+  "apiPrefix": "/api/index_dev.php/",
+  "headless": false,
+  "slowMo": 120,
+  "timeoutMs": 30000,
+  "maxUsers": 500,
+  "screenshots": true,
+  "liveUiReviewed": true,
+  "readRoutes": [
+    "login",
+    "employee/showDashboard",
+    "subscriber/list",
+    "subscriber/showDashboard",
+    "subscriber/showH8Profile",
+    "subscriber/showSubscriberSpecialTickets",
+    "advancedSearch/subscriber/loadData",
+    "ticket/list"
+  ]
+}
