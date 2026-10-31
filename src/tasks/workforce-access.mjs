@@ -16,7 +16,7 @@ function assertIdentity(state, result, group) {
   if (!state || state.username !== result.username || state.tenant !== result.tenant || state.groupId !== group.id || typeof state.found !== 'boolean' || typeof state.selected !== 'boolean') throw new StopError('USER_IDENTITY', 'Workforce tenant, group or exact username could not be verified.');
 }
 
-export async function runWorkforceTask(input, { config, openSession, checkpoint = async () => {}, now = () => new Date().toISOString() }) {
+export async function runWorkforceTask(input, { config, openSession, checkpoint = async () => {}, onStage = async () => {}, now = () => new Date().toISOString() }) {
   const request = validateWorkforceInput(input, config.maxUsers);
   const report = { schemaVersion: 1, task: 'workforce-access', executionId: randomUUID(), environment: 'staging',
     action: request.action, mode: request.apply ? 'apply' : 'dry-run', status: 'IN_PROGRESS', startedAt: now(), finishedAt: null,
@@ -35,10 +35,12 @@ export async function runWorkforceTask(input, { config, openSession, checkpoint 
     await session.ensureLogin();
     for (const tenant of request.tenants) {
       if (stopped) break;
+      await onStage('collecting', `Opening the approved ${tenant} Workforce tenant and first Sales User Group.`);
       await session.openTenant(tenant);
       const group = await session.openFirstGroup();
       if (!group?.id || !group.name) throw new StopError('GROUP_IDENTITY', 'The first group needs a stable identity before editing.');
       for (const result of report.results.filter(r => r.tenant === tenant)) {
+        await onStage('processing', `Checking exact group membership in ${tenant}.`, result.username);
         result.group = group; result.outcome = 'IN_PROGRESS'; await persist();
         try {
           const state = await session.inspectUser(result.username, group);
@@ -61,6 +63,7 @@ export async function runWorkforceTask(input, { config, openSession, checkpoint 
           const saveOnce = desired ? await session.prepareGrant(state, group) : await session.prepareRemoval(state, group);
           result.outcome = 'SAVE_STARTED_UNVERIFIED'; result.saveAttempted = true; result.saveStartedAt = now();
           await persist();
+          await onStage('saving', `Attempting one ${request.action} Save; verifying persisted membership afterward.`, result.username);
           await saveOnce();
           const fresh = desired ? await session.verifyGrant(state, group) : await session.verifyRemoval(state, group);
           assertIdentity(fresh, result, group);
@@ -79,6 +82,7 @@ export async function runWorkforceTask(input, { config, openSession, checkpoint 
     }
   } catch (error) { report.error = errorInfo(error); }
   finally {
+    await onStage('cleanup', 'Verifying Workforce logout and closing the browser.').catch(() => {});
     report.cleanup = { logout: 'NOT_REQUIRED', browser: 'NOT_OPENED' };
     if (session) {
       try { report.cleanup.logout = await session.logout(); }

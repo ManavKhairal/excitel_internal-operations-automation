@@ -1,4 +1,10 @@
-# Current validation: Workforce grant and remove actions (2026-10-28)
+# Current validation: Workforce access in the web dashboard (2026-10-31)
+
+The dashboard commit from `feature/deposit-refundability` was merged into `feature/workforce-access`. Workforce is now the third registered dashboard task, with explicit tenant and grant/remove controls, preview and apply, stage progress, record results, CSV/JSON reports, and cleanup status. The CLI and dashboard use the same Workforce task runner. A visible browser can prompt the operator for manual SSO/MFA when needed.
+
+`npm run check` passed and the full offline `npm test` suite passed **148 tests, 0 failures**. Coverage includes dashboard input validation, browser preview and confirmed apply, grant and removal in both tenants, exact group membership and one-save guards, report downloads, error and uncertain-save handling, and the original ERP, deposit and Workforce regressions. The [local browser screenshot](output/web-test-evidence/workforce-removal-result-desktop.png) shows a completed two-tenant removal in the offline fixture. No live Workforce access was changed by this integration.
+
+# Previous validation: Workforce grant and remove actions (2026-10-28)
 
 `npm run check` passed. The full `npm test` suite passed **107 tests, 0 failures**, comprising the original 77 ERP/deposit regressions and 30 Workforce tests. Existing grant commands remain compatible; `--action grant` is the default and removal requires explicit `--action remove`. Both actions remain preview-only unless `--apply` is supplied.
 

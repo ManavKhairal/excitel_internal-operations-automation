@@ -1,5 +1,11 @@
 # Debugging journal
 
+## 2026-10-31 — Workforce access dashboard integration
+
+The dashboard was committed on `feature/deposit-refundability` while Workforce access was already implemented on `feature/workforce-access`. Merged the dashboard into the Workforce branch and registered Workforce as the third UI task. The shared runner now serves both the Workforce CLI and the dashboard, preserving the existing tenant, action, staging, exact-user, request-guard, checkpoint and logout rules. The dashboard exposes explicit grant/removal and tenant selection, preview/apply, manual browser login prompts, progress, per-record results and CSV/JSON reports.
+
+Added offline API and browser coverage for grant/removal, validation, reporting, error and uncertain-save handling, and manual SSO continuation. `npm run check` passed; `npm test` passed 148/148. Visual evidence: `output/web-test-evidence/workforce-removal-result-desktop.png`. No live staging Workforce access was changed during the integration.
+
 ## 2026-10-28 — phpMyAdmin post-save query controls
 
 Request: fix the duplicate Edit inline control that interrupted verification after an approved refundable update.

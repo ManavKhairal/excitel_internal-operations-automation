@@ -8,5 +8,5 @@ async function check(directory) {
     else if (entry.name.endsWith('.mjs')) execFileSync(process.execPath, ['--check', file], { stdio: 'inherit' });
   }
 }
-for (const directory of ['src', 'tests', 'scripts']) await check(directory);
+for (const directory of ['src', 'tests', 'scripts', 'web']) await check(directory);
 console.log('JavaScript syntax checks passed.');

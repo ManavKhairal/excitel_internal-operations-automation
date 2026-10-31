@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Staging-only Procare employee collection and verified CoreHR deactivation",
+  "description": "Local staging automation dashboard for ERP and Workforce, with an offline deposit demo",
   "engines": { "node": ">=22.0.0" },
   "scripts": {
     "start": "node src/cli.mjs",
     "login": "node src/cli.mjs --login-only",
+    "web": "node src/web/main.mjs",
+    "web:token": "node scripts/dashboard-token.mjs",
+    "test:web": "node --test --test-concurrency=1 tests/web*.test.mjs",
     "test": "node --test --test-concurrency=1 tests/*.test.mjs",
     "check": "node scripts/check.mjs"
   },

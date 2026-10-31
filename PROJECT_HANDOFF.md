@@ -1,35 +1,36 @@
 # Project handoff — internal operations automation
 
-Last updated: **28 October 2026**, Asia/Kolkata.
+Last updated: **31 October 2026**, Asia/Kolkata.
 
-This is the resume point for the project. The user asked to leave the working functionality as it is and continue later. Creating this document does not authorize further application changes or implementation work.
+This is the resume point for the project. The Workforce and centralized dashboard branches have been combined in this development copy. The historical operational evidence below remains scoped to the approvals recorded at the time; this integration was tested only with offline fixtures.
 
 ## Start here next time
 
+- **The local dashboard now lists ERP deactivation, deposit refundability and Workforce Sales group access.** Workforce has tenant and grant/remove inputs, reviewed previews, separate apply confirmation, progress and saved reports. Start it with `npm run web` and read the private local token with `npm run web:token`. See [the dashboard guide](docs/web-dashboard.md).
 - **ERP employee deactivation works in staging**, including Inactive/Terminated partner support, automatic employee pagination, verified deactivation and logout.
 - **Deposit refundability has completed approved North production runs**, including multiple usernames, verified saves, logout and completion-sheet entries. The duplicate Edit inline problem is fixed and verified live.
 - **Important distinction:** live deposit runs used scoped local execution helpers plus the connected Google Sheets tools. The ordinary deposit CLI still supports offline demonstrations and blocks general production writes. A fully standalone production deposit runner is pending.
 - **Workforce access is now implemented on `feature/workforce-access` for staging.** The task supports granting or removing exact membership in the first Sales User Group in North, South or both tenants, using `--action grant|remove`. Grant remains the default; removal is explicit. Missing users in one tenant do not prevent processing the other. See [the Workforce guide](docs/workforce-access.md) and current validation below.
-- **The deposit foundation checkpoint `db3d5ff` has been pushed to `origin/feature/deposit-refundability`.** Workforce was branched from that saved foundation; Workforce is now saved in the local checkpoint containing this handoff, titled `Add staging Workforce access grant and removal automation`. Its GitHub push remains pending.
+- **The deposit foundation checkpoint `db3d5ff` is on `origin/feature/deposit-refundability`.** The local deposit branch also contains dashboard commit `2562dec`; the local Workforce branch combines that work with commit `e184007`. No merge of these feature branches to `main` or new push was performed during the dashboard integration.
 - No previously requested user update remains unfinished. Historical report usernames and local helper scripts are not a new execution queue.
 
 ## Repository and branches
 
 Repository: [excitel_internal-operations-automation](https://github.com/ManavKhairal/excitel_internal-operations-automation).
 
-Local folder: `/home/manav/Downloads/corehr-staging-automation`. The folder and package retain their original CoreHR name; the intended product is one modular project for several support operations.
+Current development-copy folder: `/home/manav/Documents/Code/GUI-staging-automation ` (including its trailing space). The package retains its original CoreHR name; the product is one modular project for several support operations.
 
 | Branch / reference | State at this handoff | Purpose / next action |
 | --- | --- | --- |
 | `main` | Commit `984ef2f`; stable ERP baseline | Preserve as the known working ERP version. |
-| `feature/deposit-refundability` | Commit `db3d5ff`, pushed to its origin branch | Saved multi-task/deposit foundation; preserve it while developing Workforce. |
-| `feature/workforce-access` | Current branch; local checkpoint containing this handoff, based on `db3d5ff` | Staging grant/remove automation, documentation and 107 passing regressions saved locally. GitHub push pending. |
+| `feature/deposit-refundability` | Local dashboard commit `2562dec`; origin still at `db3d5ff` | Dashboard and deposit foundation before combining with Workforce. |
+| `feature/workforce-access` | Current local branch combining Workforce with the dashboard; origin at Workforce commit `e184007` | Three-task local application; the combined work is not pushed. |
 | `erp-deactivation-stable-2026-10-27` | Existing tag at `984ef2f` | Recovery point for the ERP automation before the local multi-task expansion. |
 | `v1.0.0` | Existing tag at `aadaf06` | Earlier initial backup. |
 
 There is no separate ERP feature branch in the current branch list: its stable implementation is on `main` and the ERP recovery tag.
 
-The locally recorded `origin/main` remains at the stable ERP baseline `984ef2f`. The deposit checkpoint was pushed and its remote hash verified as `db3d5ff`. The Workforce branch was created from that checkpoint and committed locally at the user's request. No Workforce merge or push was performed by this checkpoint.
+The locally recorded `origin/main` remains at the stable ERP baseline `984ef2f`. The deposit checkpoint was pushed at `db3d5ff`; `2562dec` is a later local dashboard commit. The Workforce commit `e184007` is also the recorded origin Workforce head. The combined three-task dashboard remains local on `feature/workforce-access` until separately pushed.
 
 The pushed checkpoint includes the dispatcher, preserved ERP CLI, deposit modules, fixtures, tests and handoff. The Workforce implementation is saved in its separate local feature commit. Credentials, sessions and production reports remain excluded from Git. Inspect `git status` before switching branches.
 

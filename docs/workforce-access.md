@@ -15,6 +15,8 @@ They were initialized once from the existing Procare credentials as requested. F
 
 ## Commands
 
+The local dashboard also lists **Workforce Sales group access** under Automations. Run `npm run web`, sign in with the local dashboard token, select Workforce, enter exact usernames, choose an approved tenant and grant/remove action, then run a preview. Review its record-level results before separately confirming a staging apply. The dashboard calls the same Workforce task runner as these CLI commands. It does not authorize a live membership change on its own; use only an approved target and scope.
+
 Visible-browser preview, with no membership checkbox changes or saves:
 
 ```bash

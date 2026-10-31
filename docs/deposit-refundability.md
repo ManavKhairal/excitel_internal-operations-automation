@@ -18,6 +18,21 @@ Simulate the complete change, verification, logout, and sheet entry:
 npm start -- --task deposit-refundability --demo --username demo.north --apply
 ```
 
+Simulate the reverse change (`1 -> 0`) and record the username in the appropriate Managed users tab:
+
+```bash
+npm start -- --task deposit-refundability --demo --username demo.north --refundable 0 --apply
+```
+
+Omit `--apply` for preview. `--refundable 1` is the default, so existing commands retain their behavior. Only exact values `0` and `1` are accepted. Each run has one target value for all its usernames.
+
+| Target | Eligible change | Completion tab | Written columns |
+| --- | --- | --- | --- |
+| `--refundable 1` (default) | `0 -> 1` | North/South Changes reverted | Username / YES / Date |
+| `--refundable 0` | `1 -> 0` | North/South Managed users | Username only (column A) |
+
+The Managed users layout was inspected read-only: both tabs have a Username header in column A, with no Refundable or Date columns. The new direction follows that existing layout and does not create columns or modify the live workbook during development.
+
 Process synthetic North and South users in the same run:
 
 ```bash
@@ -33,24 +48,24 @@ The demo uses `https://deposit-fixture.invalid`, intercepted entirely inside Pla
 3. North/Delhi/DEL maps to the Delhi host; South/Hyderabad/HYD maps to the Hyderabad host. Both source sheets are checked to detect conflicting membership. Inputs are deduplicated; a run accepts up to 20 usernames.
 4. Look up deposits with a fixed SELECT joining `subscriber_deposit` to `subscriber`. Include `s.username AS automation_username` so each result remains tied to the exact requested username. SQL uses an encoded literal and binary username comparison. Arbitrary SQL is not an input option.
 5. Every row needs a reviewed unique deposit key, subscriber ID, exact username, and 0/1 flag values. Duplicate keys, multiple subscriber IDs for one username, unknown flags, missing records, or incomplete result pages stop processing that username before changes.
-6. Skip each row where `is_covered = 1` or `is_bundled = 1`. Continue with its other eligible rows. Skip eligible rows already at `refundable = 1`, reporting `ALREADY_REFUNDABLE`.
-7. In apply simulation, re-read each eligible record before editing. Double-click its refundable cell, fill `1`, persist a checkpoint, then press Enter exactly once. Re-query and require the same deposit key, subscriber ID, username and eligible flags, with persisted refundable `1`. An optimistic UI value alone does not pass verification.
+6. Skip each row where `is_covered = 1` or `is_bundled = 1`. Continue with its other eligible rows. Skip eligible rows already at the requested target, reporting `ALREADY_REFUNDABLE` (target 1) or `ALREADY_NON_REFUNDABLE` (target 0). The covered/bundled exclusion applies to both directions.
+7. In apply simulation, re-read each eligible record before editing. Double-click its refundable cell, fill the requested target (`0` or `1`), persist a checkpoint, then press Enter exactly once. Re-query and require the same deposit key, subscriber ID, username and eligible flags, with the persisted requested refundable value. An optimistic UI value alone does not pass verification.
 8. Reuse one session per tenant. After database processing, log out once from each opened tenant, verify that reopening requires login, and close the browsers.
-9. Only then record users whose changed rows were fully verified. North uses `North Changes reverted`; South uses `South Changes reverted`. Values are Username, `YES`, and the completion date in Asia/Kolkata (`YYYY-MM-DD`). All-already-refundable or all-ineligible users get a report but no new sheet entry.
-10. Completion recording checks for an existing exact Username/YES/Date entry and reads back a new entry. A duplicate for the same day is not appended. Historical entries on other dates are preserved. The current completion adapter requires reviewed A/B/C column order; it stops if layout differs.
+9. Only then record users whose changed rows were fully verified. For target 1, North uses `North Changes reverted` and South uses `South Changes reverted`, with Username, `YES`, and the completion date in Asia/Kolkata (`YYYY-MM-DD`). For target 0, append only the username to `North Managed users` or `South Managed users`. Users already at the target, or with only ineligible rows, get a report but no new sheet entry.
+10. Completion recording checks for an existing exact Username/YES/Date entry and reads back a new entry. A duplicate for the same day is not appended. Historical entries on other dates are preserved. The Changes reverted adapter requires reviewed A/B/C column order. Managed users requires Username in column A and deduplicates by exact username across all dates. Multiple existing matches cause an error rather than another append. No entries are removed from any tab when changing direction.
 
-The requested database value is **1**, as clarified in the supplied manual steps. Earlier discussion of setting 0 is superseded.
+Both directions are supported by the shared workflow. The default remains **1**; target **0** must be requested explicitly. Live write restrictions are unchanged: these commands are offline demonstrations, not a general production executor.
 
 ## Reports and failure handling
 
 Each run creates `output/<timestamp>-deposit-demo-<username>/`:
 
 - `report.json`: task/execution ID, mode, environment, times, per-user status, per-deposit outcomes, flags, before/after values, save attempts, verification times, logout results and sheet recording status.
-- `report.csv`: one row per deposit, including skipped/already-refundable rows. A blocked username without deposits still has a row.
+- `report.csv`: one row per deposit, including `targetRefundable` and skipped/already-at-target rows. A blocked username without deposits still has a row.
 - `demo-state.json`: synthetic final records, completion tabs and event sequence for review.
 - `error.json`: startup or other errors outside the workflow, when an output directory was created.
 
-`PREVIEW_COMPLETED` explicitly means no deposit change was requested. `REFUNDABLE_VERIFIED` means the simulated change was re-read successfully. `SAVE_STARTED_UNVERIFIED` is persisted before Enter. An uncertain save becomes `SAVE_UNVERIFIED`; the batch stops and does not repeat the write.
+`PREVIEW_COMPLETED` explicitly means no deposit change was requested. `REFUNDABLE_VERIFIED` (target 1) or `NON_REFUNDABLE_VERIFIED` (target 0) means the simulated change was re-read successfully. `SAVE_STARTED_UNVERIFIED` is persisted before Enter. An uncertain save becomes `SAVE_UNVERIFIED`; the batch stops and does not repeat the write.
 
 If some rows changed and another failed, the report retains those individual outcomes and withholds the user's completion entry (`BLOCKED_PARTIAL_RESULT`). Previously completed users can still be recorded after verified logout. Logout or browser-close failures preserve verified deposit results but defer sheet recording.
 

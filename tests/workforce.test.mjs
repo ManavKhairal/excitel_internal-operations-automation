@@ -31,6 +31,21 @@ test('Workforce preview searches both tenants but never changes a checkbox or se
   assert.equal(report.status, 'PREVIEW_COMPLETED'); assert.equal(state.saves.length, 0);
   assert.deepEqual(report.results.map(r => r.outcome), ['WOULD_GRANT_ACCESS', 'WOULD_GRANT_ACCESS']);
 });
+test('Workforce web operator can finish manual staging login without entering credentials in the dashboard', async () => {
+  const { session, state } = await workforceFixture(browser, config, {}, false, 'grant');
+  session.credentials = { username: '', password: '' };
+  let prompted = false;
+  session.ask = async message => {
+    prompted = true; assert.match(message, /Workforce staging login or MFA/);
+    state.signedIn = true;
+    await session.page.goto(config.portalUrl, { waitUntil: 'domcontentloaded' });
+  };
+  try {
+    await session.ensureLogin();
+    assert.equal(prompted, true);
+    assert.equal(await session.page.getByAltText('Workforce', { exact: true }).isVisible(), true);
+  } finally { await session.close(); }
+});
 test('regional Auth0 scripts work while optional external avatars remain blocked without failing the task', async () => {
   const { report } = await execute({ regionalAuthAssets: true }, false);
   assert.equal(report.status, 'PREVIEW_COMPLETED', JSON.stringify(report.error)); assert.equal(report.blockedRequests.length, 0);

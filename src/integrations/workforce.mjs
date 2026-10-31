@@ -30,8 +30,8 @@ export function approvedMembershipUpdate(url, method, body, armed) {
 }
 
 export class WorkforceSession {
-  constructor(page, context, config, credentials, { apply = false, action = 'grant', directory } = {}) {
-    Object.assign(this, { page, context, config, credentials, apply, action, directory });
+  constructor(page, context, config, credentials, { apply = false, action = 'grant', directory, ask } = {}) {
+    Object.assign(this, { page, context, config, credentials, apply, action, directory, ask });
     this.tenant = null; this.armed = null; this.usedSaves = new Set(); this.blocked = []; this.writeAudit = [];
   }
   assertClear() { if (this.blocked.length) throw new StopError('BLOCKED_REQUEST', 'An unapproved Workforce request or dialog was blocked. No write is retried.'); }
@@ -43,13 +43,24 @@ export class WorkforceSession {
   async ensureLogin() {
     await this.page.goto(this.config.portalUrl, { waitUntil: 'domcontentloaded' });
     const ready = this.page.getByAltText('Workforce', { exact: true });
+    let manualLogin = false;
     await waitFor(async () => await ready.isVisible() || await this.page.locator('input[name="username"]').isVisible(), { timeoutMs: this.config.timeoutMs, description: 'Portal or its staging login form' });
     if (!await ready.isVisible()) {
       if (new URL(this.page.url()).origin !== WORKFORCE_STAGING.auth) throw new StopError('LOGIN_ORIGIN', 'Refusing Workforce credentials on an unapproved login origin.');
-      if (!this.credentials.username || !this.credentials.password) throw new StopError('LOGIN_CONFIG', 'Set WORKFORCE_USERNAME and WORKFORCE_PASSWORD independently in the local .env.');
-      await (await uniqueVisible(this.page.locator('input[name="username"]'), 'Workforce login username', this.config.timeoutMs)).fill(this.credentials.username);
-      await (await uniqueVisible(this.page.locator('input[name="password"]'), 'Workforce login password', this.config.timeoutMs)).fill(this.credentials.password);
-      await (await uniqueVisible(this.page.locator('button[name="submit"]'), 'Workforce login', this.config.timeoutMs)).click();
+      if (this.credentials.username && this.credentials.password) {
+        await (await uniqueVisible(this.page.locator('input[name="username"]'), 'Workforce login username', this.config.timeoutMs)).fill(this.credentials.username);
+        await (await uniqueVisible(this.page.locator('input[name="password"]'), 'Workforce login password', this.config.timeoutMs)).fill(this.credentials.password);
+        await (await uniqueVisible(this.page.locator('button[name="submit"]'), 'Workforce login', this.config.timeoutMs)).click();
+      } else if (!this.ask) throw new StopError('LOGIN_CONFIG', 'Set WORKFORCE_USERNAME and WORKFORCE_PASSWORD independently in the local .env.');
+      else manualLogin = true;
+    }
+    if (this.ask && !await ready.isVisible()) {
+      if (manualLogin) await this.ask('Complete Workforce staging login or MFA in the opened browser, then continue.');
+      else try { await uniqueVisible(ready, 'Workforce app tile', Math.min(this.config.timeoutMs, 10000)); }
+      catch (error) {
+        if (error.code === 'AMBIGUOUS_CONTROL') throw error;
+        await this.ask('Complete Workforce staging login or MFA in the opened browser, then continue.');
+      }
     }
     await uniqueVisible(ready, 'Workforce app tile', this.config.timeoutMs); this.assertClear();
   }

@@ -1,5 +1,17 @@
 # Excitel internal operations automation
 
+## Central automation dashboard
+
+Run `npm run web` and open **http://127.0.0.1:4310**. In a second terminal, run
+`npm run web:token` to display the private local access token for sign-in.
+The dashboard provides schema-driven task forms, preview review and confirmed
+apply, live execution monitoring, existing CLI history, report downloads and
+non-sensitive settings. ERP and Workforce remain staging-only; deposit remains an offline demo.
+The original CLI commands below continue to work and share the dashboard's run lock.
+
+See [installation, operation, recovery and adding tasks](docs/web-dashboard.md).
+Run `npm run test:web` for focused web tests, or `npm test` for all regressions.
+
 One Node.js + Playwright project with independently selected tasks:
 
 | Task | Command | Availability |
@@ -8,7 +20,7 @@ One Node.js + Playwright project with independently selected tasks:
 | Deposit refundability | `npm start -- --task deposit-refundability --demo --username demo.north` | Offline preview/demo implemented; production preview and writes remain disabled. |
 | Workforce Sales group access | `npm start -- --task workforce-access --username USERNAME --tenant both --action grant` | Grant/remove with `--action`; preview by default, `--apply` saves and verifies. |
 
-The deposit task checks the two tenant sheets, validates individual deposit records, simulates eligible refundable changes to **1**, verifies results, logs out, and records completion in a simulated sheet. See [deposit setup and rules](docs/deposit-refundability.md) for demo commands, current limits, and the remaining production-preview setup. No additional dependencies are required.
+The deposit task checks the two tenant sheets, validates individual deposit records, simulates eligible refundable changes to the selected **0 or 1** target, verifies results, logs out, and records completion in a simulated sheet. See [deposit setup and rules](docs/deposit-refundability.md) for demo commands, current limits, and the remaining production-preview setup. No additional dependencies are required.
 
 The [Workforce task](docs/workforce-access.md) uses independent `WORKFORCE_USERNAME` / `WORKFORCE_PASSWORD` credentials. It grants or removes membership in the first Sales User Group in North, South or both tenants, preserves other members/settings, skips already-correct membership, verifies saved results and signs out. Use `--action grant` (the default) or explicit `--action remove`, with `--apply` for saves. Missing users are reported per tenant while processing continues in the other tenant.
 
