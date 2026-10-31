@@ -1,4 +1,8 @@
-# Current validation: approved North post-save retest (2026-10-28)
+# Branch integration validation (2026-10-31)
+
+The shared dispatcher and the isolated Deposit, Workforce, and Procare branches were checked separately. Their offline suites passed 47/47, 92/92, 77/77, and 66/66 tests, respectively. After combining them, `npm run check` passed and the full offline `npm test` suite passed **141/141**. No live automation was run during branch integration.
+
+# Previous validation: approved North post-save retest (2026-10-28)
 
 After the user manually reset the two approved deposits and removed the completion entry, a fresh North-only run confirmed exact source-sheet membership, no South membership, no existing completion entry, and refundable=0 on both deposits. The visible browser saved each deposit once, verified both persisted values as 1, verified the final complete record set, logged out and required login again. Report status: **COMPLETED**, **2 save attempts / 2 save dispatches / 2 verified deposits**.
 

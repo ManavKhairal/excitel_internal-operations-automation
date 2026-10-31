@@ -15,6 +15,8 @@ The [Workforce task](docs/workforce-access.md) uses independent `WORKFORCE_USERN
 
 The [Procare subscriber synchronization task](docs/procare-subscriber-synchronization.md) reads exact North usernames from a reviewed sheet snapshot or Excel workbook. It uses separate production credentials, previews by default, and requires `--apply` to synchronize.
 
+For branch creation, merging, and rollbacks, see [branching and recovery](docs/branching.md).
+
 ## ERP employee deactivation
 
 A local Node.js + Playwright project for the workflow you described:

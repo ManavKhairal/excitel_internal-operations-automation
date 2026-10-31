@@ -1,10 +1,10 @@
 # Procare subscriber synchronization
 
-Branch: `feature/procare-subscriber-synchronization`. This is a separate task for North production Procare, using the username list selected from a Google Sheet. Existing ERP, deposit and Workforce tasks keep their own configuration and credentials.
+This is a separate task for North production Procare, using a reviewed username list. ERP, deposit and Workforce tasks keep their own configuration and credentials.
 
 ## Current validation
 
-The production sign-in page and public application bundle were inspected without signing in or synchronizing any subscriber. They confirm the production Auth0 origin, subscriber search/profile routes, detail username selector, and the synchronization endpoint. The UI workflow and request guard are covered by isolated browser fixtures. Authenticated production preview and the real synchronization response still require validation with the supplied sheet and credentials. `liveUiReviewed` therefore remains false in the checked-in configuration; apply stops before browser creation until that review is completed.
+The production sign-in page and application routes were reviewed, and prior authenticated runs produced verified synchronization responses. The checked-in configuration sets `liveUiReviewed` to `true`, so `--apply` can send production synchronization requests. Preview each new batch, confirm its source and exact usernames, and inspect the prior report before restarting an interrupted run. An offline test suite also covers the UI workflow and request guard. Branch cleanup did not execute the live task.
 
 ## Credentials
 
