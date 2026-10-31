@@ -1,4 +1,15 @@
-# Procare to CoreHR: staging employee deactivation
+# Excitel internal operations automation
+
+One Node.js + Playwright project with independently selected tasks:
+
+| Task | Command | Availability |
+| --- | --- | --- |
+| ERP employee deactivation | `npm start -- --partner "PARTNER"` or add `--task erp-deactivation` | Existing staging workflow; `--apply` enables staging saves. |
+| Deposit refundability | `npm start -- --task deposit-refundability --demo --username demo.north` | Offline preview/demo implemented; production preview and writes remain disabled. |
+
+The deposit task checks the two tenant sheets, validates individual deposit records, simulates eligible refundable changes to **1**, verifies results, logs out, and records completion in a simulated sheet. See [deposit setup and rules](docs/deposit-refundability.md) for demo commands, current limits, and the remaining production-preview setup. No additional dependencies are required.
+
+## ERP employee deactivation
 
 A local Node.js + Playwright project for the workflow you described:
 
@@ -13,11 +24,11 @@ A local Node.js + Playwright project for the workflow you described:
 9. Write per-user results, including already-inactive, not-found, failed and unprocessed users.
 10. Log out of CoreHR and Procare using their UI menus, verify that reopening each app requires login, and close both browsers.
 
-**Current scope:** manual trigger, staging only. No Zendesk, Gmail, AI API, Joget, production switch, or database updates are included. No extra AI subscription/API key is needed to run this script.
+**ERP scope:** manual trigger, staging only. No Zendesk, Gmail, AI API, Joget, production switch, or database updates are included. No extra AI subscription/API key is needed to run this script.
 
 ## Validation status and known gaps
 
-The code passed **46 offline browser-fixture, CLI, and unit tests**. These tests simulate CoreHR markup, the verified Procare table/pager, partner status eligibility, and logout flows. They do **not** connect to either company application or deactivate real users. Separate staging run and live logout evidence is recorded in `TEST_RESULTS.md`.
+The original ERP baseline passed **46 offline browser-fixture, CLI, and unit tests**. Current multi-task validation is recorded in `TEST_RESULTS.md`. These tests simulate CoreHR markup, the verified Procare table/pager, partner status eligibility, and logout flows. They do **not** connect to either company application or deactivate real users. Separate staging run and live logout evidence is recorded in `TEST_RESULTS.md`.
 
 Your supplied CoreHR `data-id` selectors are used directly. Generated `css-*` and `_ngcontent-*` classes are deliberately not used.
 

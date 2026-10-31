@@ -1,0 +1,20 @@
+{
+  "spreadsheetId": "1R6xP9Eu52MrtdD8Afk_EoNrvMtsR-oVpvMU-fwAjLac",
+  "timeZone": "Asia/Kolkata",
+  "timeoutMs": 20000,
+  "headless": false,
+  "maxUsers": 20,
+  "maxDepositsPerUser": 200,
+  "sheets": {
+    "north": { "source": "North Tenant", "completion": "North Changes reverted", "managed": "North Managed users" },
+    "south": { "source": "South Tenant", "completion": "South Changes reverted", "managed": "South Managed users" }
+  },
+  "livePreview": {
+    "enabled": false,
+    "database": "excitel_ticketing_system",
+    "table": "subscriber_deposit",
+    "rowKeyColumn": null,
+    "resultTableSelector": null,
+    "inlineEditorSelector": null
+  }
+}
