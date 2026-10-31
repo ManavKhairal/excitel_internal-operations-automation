@@ -6,8 +6,11 @@ One Node.js + Playwright project with independently selected tasks:
 | --- | --- | --- |
 | ERP employee deactivation | `npm start -- --partner "PARTNER"` or add `--task erp-deactivation` | Existing staging workflow; `--apply` enables staging saves. |
 | Deposit refundability | `npm start -- --task deposit-refundability --demo --username demo.north` | Offline preview/demo implemented; production preview and writes remain disabled. |
+| Workforce Sales group access | `npm start -- --task workforce-access --username USERNAME --tenant both --action grant` | Grant/remove with `--action`; preview by default, `--apply` saves and verifies. |
 
 The deposit task checks the two tenant sheets, validates individual deposit records, simulates eligible refundable changes to **1**, verifies results, logs out, and records completion in a simulated sheet. See [deposit setup and rules](docs/deposit-refundability.md) for demo commands, current limits, and the remaining production-preview setup. No additional dependencies are required.
+
+The [Workforce task](docs/workforce-access.md) uses independent `WORKFORCE_USERNAME` / `WORKFORCE_PASSWORD` credentials. It grants or removes membership in the first Sales User Group in North, South or both tenants, preserves other members/settings, skips already-correct membership, verifies saved results and signs out. Use `--action grant` (the default) or explicit `--action remove`, with `--apply` for saves. Missing users are reported per tenant while processing continues in the other tenant.
 
 ## ERP employee deactivation
 

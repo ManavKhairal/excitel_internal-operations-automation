@@ -1,0 +1,11 @@
+{
+  "environment": "staging",
+  "portalUrl": "https://staging-portal.excitel.in/choose-app",
+  "workforceOrigin": "https://staging-wf.excitel.in",
+  "authOrigin": "https://excitel-prerelease.eu.auth0.com",
+  "headless": false,
+  "slowMo": 150,
+  "timeoutMs": 25000,
+  "maxUsers": 20,
+  "screenshots": true
+}
