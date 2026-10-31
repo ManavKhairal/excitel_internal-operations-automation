@@ -1,4 +1,15 @@
-# Procare to CoreHR: staging employee deactivation
+# Internal operations automation
+
+Select a task with `--task`:
+
+| Task | Command | Availability |
+| --- | --- | --- |
+| ERP employee deactivation | `npm start -- --partner "PARTNER"` or `--task erp-deactivation` | Staging; preview by default. |
+| Workforce Sales group access | `npm start -- --task workforce-access --username USERNAME --tenant both --action grant` | Staging; preview by default, `--apply` saves and verifies. |
+
+The [Workforce task](docs/workforce-access.md) grants or removes membership in the first Sales User Group in North, South, or both tenants. It uses separate `WORKFORCE_USERNAME` and `WORKFORCE_PASSWORD` credentials.
+
+## ERP employee deactivation
 
 A local Node.js + Playwright project for the workflow you described:
 
@@ -13,7 +24,7 @@ A local Node.js + Playwright project for the workflow you described:
 9. Write per-user results, including already-inactive, not-found, failed and unprocessed users.
 10. Log out of CoreHR and Procare using their UI menus, verify that reopening each app requires login, and close both browsers.
 
-**Current scope:** manual trigger, staging only. No Zendesk, Gmail, AI API, Joget, production switch, or database updates are included. No extra AI subscription/API key is needed to run this script.
+**ERP scope:** manual trigger, staging only. No Zendesk, Gmail, AI API, Joget, production switch, or database updates are included. No extra AI subscription/API key is needed to run this script.
 
 ## Validation status and known gaps
 
