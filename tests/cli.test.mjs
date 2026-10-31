@@ -15,6 +15,7 @@ const fixturesUrl = new URL('./fixtures.mjs', import.meta.url).href;
 for (const scenario of [
   { name: 'default preview saves nothing', apply: false },
   { name: '--apply saves once', apply: true },
+  { name: 'explicit ERP task dispatch preserves preview behavior', apply: false, explicitTask: true },
   { name: 'logout failure preserves successful employee results and closes both browsers', apply: true, logoutFails: true },
   { name: 'collection failure still logs out and records cleanup', collectionFails: true },
   { name: 'login-only preserves prepared sessions', loginOnly: true }
@@ -55,6 +56,7 @@ for (const scenario of [
         }
       `);
       const args = [path.join(root, 'src/cli.mjs'), '--partner', 'Acme Staging Partner'];
+      if (scenario.explicitTask) args.push('--task', 'erp-deactivation');
       if (apply) args.push('--apply');
       if (loginOnly) args.push('--login-only');
       const response = await run(process.execPath, args, { timeout: 20000 }).catch(error => {
