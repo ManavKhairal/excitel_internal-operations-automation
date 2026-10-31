@@ -1,5 +1,17 @@
 # Excitel internal operations automation
 
+## Central automation dashboard
+
+Run `npm run web` and open **http://127.0.0.1:4310**. In a second terminal, run
+`npm run web:token` to display the private local access token for sign-in.
+The dashboard provides schema-driven task forms, preview review and confirmed
+apply, live execution monitoring, existing CLI history, report downloads and
+non-sensitive settings. ERP remains staging-only; deposit remains an offline demo.
+The original CLI commands below continue to work and share the dashboard's run lock.
+
+See [installation, operation, recovery and adding tasks](docs/web-dashboard.md).
+Run `npm run test:web` for focused web tests, or `npm test` for all regressions.
+
 One Node.js + Playwright project with independently selected tasks:
 
 | Task | Command | Availability |

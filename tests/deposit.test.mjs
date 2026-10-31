@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { testBrowser } from './fixtures.mjs';
-import { runDepositTask, normalizeTenant, taskDate, validateRows, recordCompletion } from '../src/tasks/deposit-refundability.mjs';
+import { runDepositTask, normalizeTenant, taskDate, validateRows, recordCompletion, validateInput } from '../src/tasks/deposit-refundability.mjs';
 import { DepositSheets, googleSheetsTransport } from '../src/integrations/deposit-sheets.mjs';
 import { lookupQuery, PhpMyAdmin } from '../src/integrations/phpmyadmin.mjs';
 import { demoData, memorySheetTransport, createDemoDatabase } from '../src/demo/deposit-demo.mjs';
@@ -15,10 +15,10 @@ before(async () => {
   config.timeoutMs = 900;
 });
 after(async () => { await browser?.close(); });
-async function execute({ state = demoData(), options = {}, usernames = ['demo.north'], apply = true, tenant } = {}) {
+async function execute({ state = demoData(), options = {}, usernames = ['demo.north'], apply = true, tenant, refundable } = {}) {
   const snapshots = [];
   const sheets = new DepositSheets(memorySheetTransport(state, options), config);
-  const report = await runDepositTask({ usernames, apply, tenant }, {
+  const report = await runDepositTask({ usernames, apply, tenant, refundable }, {
     config, sheets, environment: 'offline-demo', now: () => '2026-10-27T20:00:00.000Z',
     checkpoint: async value => snapshots.push(structuredClone(value)),
     openDatabase: async value => { state.events.push({ action: 'open-database', tenant: value }); return createDemoDatabase(browser, state, value, config, options); }
@@ -256,4 +256,122 @@ test('task selection preserves legacy ERP arguments and rejects unknown or dupli
   assert.equal(normalizeTenant(' HYD '), 'south');
   assert.throws(() => normalizeTenant('toString'), { code: 'INVALID_TENANT' });
   assert.equal(taskDate('2026-10-27T20:00:00Z'), '2026-10-28');
+});
+
+test('reverse direction changes only eligible 1 rows and records each tenant in Managed users after logout', async () => {
+  const state = demoData();
+  state.deposits[1].refundable = 1; // covered: must remain 1
+  state.deposits[2].refundable = 1; // bundled: must remain 1
+  state.deposits[4].refundable = 1;
+  const { report, snapshots } = await execute({ state, refundable: 0, usernames: ['demo.north', 'demo.south'], options: { actionColumns: true } });
+  assert.equal(report.status, 'COMPLETED');
+  assert.equal(report.targetRefundable, 0);
+  assert.deepEqual(state.deposits.map(row => row.refundable), [0, 1, 1, 0, 0]);
+  assert.deepEqual(events(state, 'save').map(({ key, value }) => [key, value]), [['104', '0'], ['201', '0']]);
+  assert.deepEqual(report.results[0].rows.map(row => row.outcome), ['ALREADY_NON_REFUNDABLE', 'SKIPPED_COVERED_OR_BUNDLED', 'SKIPPED_COVERED_OR_BUNDLED', 'NON_REFUNDABLE_VERIFIED']);
+  assert.deepEqual(state.tabs['North Managed users'], [['Username'], ['demo.north']]);
+  assert.deepEqual(state.tabs['South Managed users'], [['username'], ['demo.south']]);
+  assert.equal(state.tabs['North Changes reverted'].length, 1);
+  assert.equal(state.tabs['South Changes reverted'].length, 1);
+  assert.ok(state.events.findLastIndex(e => e.action === 'close') < state.events.findIndex(e => e.action === 'sheet-append'));
+  assert.ok(snapshots.some(s => s.results[0].targetRefundable === 0 && s.results[0].rows.some(row => row.saveAttempted && row.outcome === 'SAVE_STARTED_UNVERIFIED')));
+});
+
+test('reverse preview and already-non-refundable runs make no saves or sheet entries', async () => {
+  const preview = await execute({ refundable: 0, apply: false });
+  assert.equal(preview.report.status, 'PREVIEW_COMPLETED');
+  assert.equal(preview.report.results[0].rows[3].outcome, 'WOULD_SET_NON_REFUNDABLE');
+  assert.equal(events(preview.state, 'save').length, 0);
+  assert.equal(events(preview.state, 'sheet-append').length, 0);
+  const state = demoData();
+  state.deposits[3].refundable = 0;
+  const already = await execute({ state, refundable: 0 });
+  assert.equal(already.report.status, 'COMPLETED');
+  assert.equal(already.report.results[0].sheet.status, 'NOT_REQUIRED');
+  assert.equal(events(state, 'save').length, 0);
+  assert.equal(events(state, 'sheet-append').length, 0);
+});
+
+for (const options of [{ doNotPersist: true }, { saveResponseLost: true }]) {
+  test(`reverse uncertain save halts without retry or Managed users entry: ${Object.keys(options)[0]}`, async () => {
+    const { state, report } = await execute({ refundable: 0, options, usernames: ['demo.north', 'demo.south'] });
+    assert.equal(report.status, 'COMPLETED_WITH_EXCEPTIONS');
+    assert.equal(report.results[0].rows[3].outcome, 'SAVE_UNVERIFIED');
+    assert.equal(report.results[1].outcome, 'NOT_PROCESSED');
+    assert.equal(events(state, 'save').length, 1);
+    assert.equal(events(state, 'save')[0].value, '0');
+    assert.equal(events(state, 'sheet-append').length, 0);
+  });
+}
+
+test('reverse lost sheet response recovers in Managed users without replaying save or append', async () => {
+  const { state, report } = await execute({ refundable: 0, options: { appendResponseLost: true } });
+  const result = report.results[0];
+  assert.equal(result.sheet.status, 'FAILED');
+  await recordCompletion(result, new DepositSheets(memorySheetTransport(state), config));
+  assert.equal(result.sheet.status, 'ALREADY_RECORDED');
+  assert.equal(events(state, 'save').length, 1);
+  assert.equal(events(state, 'sheet-append').length, 1);
+  assert.deepEqual(state.tabs['North Managed users'].at(-1), ['demo.north']);
+  await assert.rejects(recordCompletion({ ...result, targetRefundable: 1 }, new DepositSheets(memorySheetTransport(state), config)), { code: 'COMPLETION_NOT_VERIFIED' });
+});
+
+test('Managed users deduplicates by username, preserves numeric usernames, and never writes invented columns', async () => {
+  const state = demoData();
+  state.tabs['North Managed users'].push([1100177113]);
+  const sheets = new DepositSheets(memorySheetTransport(state), config);
+  assert.equal(await sheets.recordCompletion('north', '1100177113', '2026-10-28', 0), 'ALREADY_RECORDED');
+  assert.equal(await sheets.recordCompletion('south', '000123', '2026-10-28', 0), 'RECORDED_VERIFIED');
+  assert.equal(await sheets.recordCompletion('south', '000123', '2026-10-29', 0), 'ALREADY_RECORDED');
+  assert.deepEqual(events(state, 'sheet-append').map(e => e.values), [['000123']]);
+  state.tabs['South Managed users'].push(['000123']);
+  await assert.rejects(sheets.recordCompletion('south', '000123', '2026-10-29', 0), { code: 'DUPLICATE_COMPLETION' });
+});
+
+test('direction accepts only 0 or 1, defaults to the original direction, and preserves live write guards', async () => {
+  assert.equal(validateInput({ usernames: ['demo.north'] }).refundable, 1);
+  assert.equal(validateInput({ usernames: ['demo.north'], refundable: '0' }).refundable, 0);
+  for (const refundable of [null, false, '', 'yes', 2, '01']) {
+    assert.throws(() => validateInput({ usernames: ['demo.north'], refundable }), { code: 'INVALID_REFUNDABLE' });
+  }
+  await assert.rejects(runDepositTask({ usernames: ['demo.north'], refundable: 0, apply: true }, { config, sheets: {}, environment: 'production-preview' }), { code: 'LIVE_WRITES_DISABLED' });
+  const adapter = new PhpMyAdmin({ url: () => 'https://del-procare-mariadb.excitel.in/pma/' }, { origin: 'https://del-procare-mariadb.excitel.in' });
+  await assert.rejects(adapter.prepareRefundable({}, 0), { code: 'LIVE_WRITES_DISABLED' });
+});
+
+test('changing back to refundable uses the original completion tab without deleting Managed users history', async () => {
+  const state = demoData();
+  await execute({ state, refundable: 0 });
+  const { report } = await execute({ state, refundable: 1 });
+  assert.equal(report.status, 'COMPLETED');
+  assert.deepEqual(state.tabs['North Managed users'], [['Username'], ['demo.north']]);
+  assert.deepEqual(state.tabs['North Changes reverted'], [['Username', 'Refundable', 'Date'], ['demo.north', 'YES', '2026-10-28']]);
+  assert.deepEqual(events(state, 'save').map(e => [e.key, e.value]), [['104', '0'], ['101', '1'], ['104', '1']]);
+});
+
+test('reverse partial result withholds Managed users recording and retains verified row evidence', async () => {
+  const state = demoData();
+  state.deposits[0].refundable = 1;
+  const { report } = await execute({ state, refundable: 0, options: { failKey: '104' } });
+  assert.equal(report.results[0].rows[0].outcome, 'NON_REFUNDABLE_VERIFIED');
+  assert.equal(report.results[0].rows[3].outcome, 'SAVE_UNVERIFIED');
+  assert.equal(report.results[0].sheet.status, 'BLOCKED_PARTIAL_RESULT');
+  assert.equal(events(state, 'save').length, 2);
+  assert.equal(events(state, 'sheet-append').length, 0);
+});
+
+test('reverse changes in eligibility flags stop before saving', async () => {
+  let count = 0;
+  const { state, report } = await execute({ refundable: 0, options: { onLookup(state) { if (++count === 2) state.deposits[3].isBundled = 1; } } });
+  assert.equal(report.results[0].error.code, 'RECORD_CHANGED');
+  assert.equal(events(state, 'save').length, 0);
+  assert.equal(events(state, 'sheet-append').length, 0);
+});
+
+test('Managed users layout mismatch fails without writing to another column', async () => {
+  const state = demoData();
+  state.tabs['North Managed users'] = [['Other', 'Username']];
+  const sheets = new DepositSheets(memorySheetTransport(state), config);
+  await assert.rejects(sheets.recordCompletion('north', 'demo.north', '2026-10-28', 0), { code: 'COMPLETION_LAYOUT' });
+  assert.equal(events(state, 'sheet-append').length, 0);
 });

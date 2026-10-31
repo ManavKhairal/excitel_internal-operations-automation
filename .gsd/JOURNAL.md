@@ -92,3 +92,28 @@ lock: RELEASED
 ```
 
 After verified logout, four completion rows were written to North Changes reverted A1671:C1674. Each exact username appeared once on readback; YES values and native dates were verified, and neighboring values were preserved. No task errors were recorded. Evidence: `output/2026-10-28T02-49-46-625Z-deposit-north-four-users-approved-apply/report.json` and `sheet-verification.json` in that directory. General production CLI write gates remain unchanged.
+
+## 2026-10-31 — centralized local automation dashboard
+
+Implemented a buildless local UI, authenticated Node API, fixed worker IPC, shared CLI/web orchestration, preview-bound approval, actual event/report monitoring, history import, safe downloads and settings. Preserved the 92-test baseline and pre-existing deposit refinements. No company applications were accessed or changed during this implementation.
+
+Actual final verification:
+
+```text
+npm run check
+JavaScript syntax checks passed.
+npm test
+# tests 113
+# pass 113
+# fail 0
+# cancelled 0
+# skipped 0
+# duration_ms 97894.261312
+TEST_EXIT_CODE=0
+```
+
+Backend tests include real offline deposit preview/apply in both directions. Three actual Chromium UI tests cover full navigation, preview/confirmation/apply, operator prompts, failures, downloads, settings and responsive layouts, including a real synthetic deposit worker launched from the UI. No unexpected browser errors or failed requests remained. Screenshots and full output are in `output/web-test-evidence/`; detailed evidence and resolved failures are recorded in `TEST_RESULTS.md`.
+
+The real startup command `npm run web` listened at `127.0.0.1:4310`. Public static assets returned 200; unauthenticated `/api/tasks` returned 401. No live automation was launched. Live staging login/MFA and account permissions remain operator-side verification, and deposit live access stays disabled.
+
+Final screenshot review also caught a deposit cleanup display gap: per-record verified logout existed in the report but was not shown in the cleanup card. The API now projects those actual outcomes; API and UI assertions cover it. Subsequent `npm run check` passed; `npm run test:web` reported 21 passed, 0 failed, duration 16782.818725 ms and WEB_TEST_EXIT_CODE=0. Final focused output: `output/web-test-evidence/web-test-results.log`. The token command, real local sign-in, module discovery and logout also passed without exposing secret values. The local server was gracefully restarted with the final implementation.

@@ -1,4 +1,5 @@
 import { StopError, clean } from '../utils.mjs';
+import { normalizeRefundable } from '../tasks/deposit-refundability.mjs';
 
 const headerKey = value => clean(value).toLowerCase().replace(/[\s_]+/g, '');
 export function columnName(index) {
@@ -46,28 +47,30 @@ export class DepositSheets {
     }
     return { north: this.members.north.has(username), south: this.members.south.has(username) };
   }
-  async recordCompletion(tenant, username, date) {
-    const name = this.config.sheets[tenant]?.completion;
+  async recordCompletion(tenant, username, date, refundable = 1) {
+    const target = normalizeRefundable(refundable);
+    const name = this.config.sheets[tenant]?.[target === 1 ? 'completion' : 'managed'];
     if (!name) throw new StopError('INVALID_TENANT', 'Unknown completion tenant.');
     const sheet = await this.sheet(name);
-    const header = findHeaders(await this.transport.read(name, `A1:${columnName(sheet.gridProperties.columnCount - 1)}${Math.min(10, sheet.gridProperties.rowCount)}`), [['username', 'userid'], ['refundable'], ['date']]);
+    const expected = target === 1 ? [['username', 'userid'], ['refundable'], ['date']] : [['username', 'userid']];
+    const header = findHeaders(await this.transport.read(name, `A1:${columnName(sheet.gridProperties.columnCount - 1)}${Math.min(10, sheet.gridProperties.rowCount)}`), expected);
     const [userColumn, refundableColumn, dateColumn] = header.columns;
     // Do not guess how append should interact with extra columns or non-adjacent fields.
-    if (userColumn !== 0 || refundableColumn !== 1 || dateColumn !== 2) throw new StopError('COMPLETION_LAYOUT', 'Completion append requires reviewed Username/Refundable/Date columns A/B/C.');
+    if (userColumn !== 0 || (target === 1 && (refundableColumn !== 1 || dateColumn !== 2))) throw new StopError('COMPLETION_LAYOUT', target === 1 ? 'Completion append requires reviewed Username/Refundable/Date columns A/B/C.' : 'Managed users append requires the reviewed Username column A.');
     const find = async () => {
       const fresh = await this.sheet(name);
       const matches = [];
       for (let first = header.row + 1; first <= fresh.gridProperties.rowCount; first += 2000) {
-        const values = await this.transport.read(name, `A${first}:C${Math.min(first + 1999, fresh.gridProperties.rowCount)}`);
-        for (const cells of values) if (String(cells[0] ?? '').trim() === username && cells[1] === 'YES' && cells[2] === date) matches.push(cells);
+        const values = await this.transport.read(name, `A${first}:${target === 1 ? 'C' : 'A'}${Math.min(first + 1999, fresh.gridProperties.rowCount)}`);
+        for (const cells of values) if (String(cells[0] ?? '').trim() === username && (target === 0 || (cells[1] === 'YES' && cells[2] === date))) matches.push(cells);
       }
-      if (matches.length > 1) throw new StopError('DUPLICATE_COMPLETION', 'Multiple completion entries already exist for this username and date.');
+      if (matches.length > 1) throw new StopError('DUPLICATE_COMPLETION', target === 1 ? 'Multiple completion entries already exist for this username and date.' : 'Multiple Managed users entries already exist for this username.');
       return matches.length === 1;
     };
     if (await find()) return 'ALREADY_RECORDED';
     // RAW values are required by transports so usernames cannot become formulas.
     // Never retry append after a timeout. A reviewed recovery first re-reads entries.
-    await this.transport.append(name, header.row, [username, 'YES', date]);
+    await this.transport.append(name, header.row, target === 1 ? [username, 'YES', date] : [username]);
     if (!await find()) throw new StopError('SHEET_UNVERIFIED', 'The appended completion entry was not found on readback.');
     return 'RECORDED_VERIFIED';
   }

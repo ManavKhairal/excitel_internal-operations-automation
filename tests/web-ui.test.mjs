@@ -1,0 +1,190 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { chromium } from 'playwright';
+import { TEST_TOKEN, deferred, fixtureExecutor, repository, startDashboard } from './web-fixtures.mjs';
+
+const evidence = path.join(repository, 'output', 'web-test-evidence');
+async function browserFor(t) {
+  const browser = await chromium.launch({ headless: true, ...(process.env.TEST_BROWSER_EXECUTABLE ? { executablePath: process.env.TEST_BROWSER_EXECUTABLE } : {}) });
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
+  page.setDefaultTimeout(8000);
+  const errors = [], failedRequests = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error' && !/status of (401|400|403|409|503)/.test(message.text())) errors.push(message.text()); });
+  page.on('requestfailed', request => { if (request.failure()?.errorText !== 'net::ERR_ABORTED') failedRequests.push(request.url()); });
+  await fs.mkdir(evidence, { recursive: true });
+  return { page, errors, failedRequests };
+}
+async function login(page, base) {
+  await page.goto(base);
+  await page.getByLabel('Dashboard access token').fill(TEST_TOKEN);
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('heading', { name: 'Operations overview' }).waitFor();
+}
+async function go(page, name, heading) {
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name, exact: true }).click();
+  await page.getByRole('heading', { name: heading, exact: true }).waitFor();
+}
+async function createPreview(page, partner = 'Fixture Partner') {
+  await go(page, 'Run task', 'Run an automation');
+  await page.getByLabel('Exact partner name').fill(partner);
+  await page.getByRole('button', { name: 'Run preview', exact: true }).click();
+  await page.waitForURL(/#executions\//);
+}
+
+test('browser dashboard navigation, input validation, preview/apply, history, downloads and responsive layouts', { timeout: 45000 }, async t => {
+  const app = await startDashboard(); t.after(() => app.dispose());
+  const { page, errors, failedRequests } = await browserFor(t);
+  await page.goto(app.base);
+  await page.getByLabel('Dashboard access token').fill('incorrect-token');
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('alert').filter({ hasText: 'incorrect' }).waitFor();
+  await page.getByLabel('Dashboard access token').fill(TEST_TOKEN);
+  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByRole('heading', { name: 'Operations overview' }).waitFor();
+  assert.deepEqual(await page.locator('.stat-number').allTextContents(), ['0', '0', '0', '0']);
+  await page.getByText('All clear. Nothing is running.', { exact: true }).waitFor();
+  await page.screenshot({ path: path.join(evidence, 'dashboard-empty-desktop.png'), fullPage: true });
+  await go(page, 'Automations', 'Automation library');
+  assert.equal(await page.locator('.module-card').count(), 2);
+  await page.getByRole('heading', { name: 'Deposit refundability', exact: true }).waitFor();
+  await go(page, 'Reports', 'Reports & evidence');
+  await page.getByText('No reports to review yet', { exact: true }).waitFor();
+  await go(page, 'Executions', 'Execution history');
+  await page.getByText('No executions yet', { exact: true }).waitFor();
+  await go(page, 'Settings', 'Workspace settings');
+  await page.getByLabel('Run offline demos without a visible browser').check();
+  await page.getByRole('button', { name: 'Save preferences' }).click();
+  await page.getByText('Preferences saved for future executions.', { exact: true }).waitFor();
+  assert.equal((await app.request('/api/settings')).data.settings.demoHeadless, true);
+  await go(page, 'Run task', 'Run an automation');
+  await page.getByRole('button', { name: 'Run preview', exact: true }).click();
+  assert.equal(await page.getByLabel('Exact partner name').evaluate(input => input.validity.valueMissing), true);
+  assert.equal((await app.request('/api/executions')).data.executions.length, 0);
+  await page.getByLabel('Exact partner name').fill('Fixture Partner');
+  await page.getByRole('button', { name: 'Run preview', exact: true }).click();
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).waitFor();
+  await page.getByText('2 of 2 records completed', { exact: true }).waitFor();
+  await page.getByText('fixture.alpha', { exact: true }).waitFor();
+  await page.screenshot({ path: path.join(evidence, 'preview-results-desktop.png'), fullPage: true });
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('link').filter({ hasText: 'report.csv' }).click();
+  const download = await downloadPromise;
+  assert.equal(download.suggestedFilename(), 'report.csv');
+  assert.match(await fs.readFile(await download.path(), 'utf8'), /fixture.alpha/);
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).click();
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('button', { name: 'Confirm staging apply', exact: true }).click();
+  assert.equal(await page.locator('#apply-ack').evaluate(input => input.validity.valueMissing), true);
+  assert.equal((await app.request('/api/executions')).data.executions.length, 1);
+  await page.screenshot({ path: path.join(evidence, 'apply-confirmation-desktop.png') });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).click();
+  await page.locator('#apply-ack').check();
+  await page.getByRole('button', { name: 'Confirm staging apply', exact: true }).click();
+  await page.getByText('Deactivated Verified', { exact: true }).waitFor();
+  await page.getByText('2 of 2 records completed', { exact: true }).waitFor();
+  await go(page, 'Executions', 'Execution history');
+  assert.equal(await page.locator('#history-table tbody tr').count(), 2);
+  await page.getByLabel('Status', { exact: true }).selectOption('failed');
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.getByText('No matching executions', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Reset', exact: true }).click();
+  await page.locator('#history-table tbody tr').first().waitFor();
+  await go(page, 'Reports', 'Reports & evidence');
+  assert.equal(await page.locator('.report-card').count(), 2);
+  await go(page, 'Dashboard', 'Operations overview');
+  assert.deepEqual(await page.locator('.stat-number').allTextContents(), ['2', '2', '0', '0']);
+  await page.screenshot({ path: path.join(evidence, 'dashboard-results-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 1024, height: 768 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path: path.join(evidence, 'dashboard-tablet.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Toggle navigation' }).click();
+  await go(page, 'Automations', 'Automation library');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path: path.join(evidence, 'automations-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Sign out of dashboard' }).click();
+  await page.getByLabel('Dashboard access token').waitFor();
+  assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
+});
+
+test('browser shows real running state, operator prompts, failures and recoverable view errors', { timeout: 45000 }, async t => {
+  const gate = deferred();
+  const app = await startDashboard({ execute: async (job, callbacks) => {
+    if (job.input.partner === 'Unavailable Fixture') throw Object.assign(new Error('Fixture application is unavailable.'), { code: 'LOGIN_REQUIRED' });
+    await callbacks.onEvent({ type: 'stage', stage: 'authenticating', message: 'Waiting for the fixture operator.' });
+    await callbacks.ask('Complete fixture SSO in the automation browser.');
+    await gate.promise;
+    return fixtureExecutor(job, callbacks);
+  } });
+  t.after(async () => { gate.resolve(); await app.dispose(); });
+  const { page, errors, failedRequests } = await browserFor(t);
+  await login(page, app.base);
+  await createPreview(page, 'Needs operator');
+  await page.getByText('Operator action required', { exact: true }).waitFor();
+  await page.getByText('No estimated progress is shown.', { exact: false }).waitFor();
+  assert.equal(await page.getByRole('progressbar').count(), 0);
+  const hash = new URL(page.url()).hash;
+  await page.reload();
+  await page.getByRole('button', { name: 'I’ve completed login — continue' }).waitFor();
+  assert.equal(new URL(page.url()).hash, hash);
+  await page.screenshot({ path: path.join(evidence, 'operator-prompt-desktop.png'), fullPage: true });
+  await page.getByRole('button', { name: 'I’ve completed login — continue' }).click();
+  await go(page, 'Dashboard', 'Operations overview');
+  assert.equal(await page.locator('.stat-number').last().textContent(), '1');
+  gate.resolve();
+  await app.manager.activePromise;
+  await page.goto(app.base + hash);
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).waitFor();
+  await createPreview(page, 'Unavailable Fixture');
+  await page.getByRole('alert').filter({ hasText: 'Fixture application is unavailable.' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Review & apply', exact: true }).count(), 0);
+  await page.screenshot({ path: path.join(evidence, 'execution-failure-desktop.png'), fullPage: true });
+  let failOnce = true;
+  await page.route('**/api/executions', async route => {
+    if (failOnce && route.request().method() === 'GET') { failOnce = false; return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'TEST_UNAVAILABLE', message: 'Fixture history temporarily unavailable.' } }) }); }
+    return route.continue();
+  });
+  await page.getByRole('navigation').getByRole('link', { name: 'Executions', exact: true }).click();
+  await page.getByRole('heading', { name: 'Couldn’t load this view' }).waitFor();
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await page.getByRole('heading', { name: 'Execution history' }).waitFor();
+  assert.equal(await page.locator('#history-table tbody tr').count(), 2);
+  assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
+});
+
+test('browser launches the real synthetic deposit worker and verifies demo apply and JSON download', { timeout: 45000 }, async t => {
+  const app = await startDashboard({ execute: null }); t.after(() => app.dispose());
+  await app.request('/api/settings', { method: 'PATCH', body: { demoHeadless: true } });
+  const { page, errors, failedRequests } = await browserFor(t);
+  await login(page, app.base);
+  await go(page, 'Run task', 'Run an automation');
+  await page.getByLabel('Automation', { exact: true }).selectOption('deposit-refundability');
+  await page.getByLabel('Usernames').fill('demo.north');
+  await page.getByLabel('Target refundable value').selectOption('0');
+  assert.equal(await page.getByLabel('Environment', { exact: true }).inputValue(), 'offline-demo');
+  await page.getByRole('button', { name: 'Run preview', exact: true }).click();
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).waitFor();
+  await page.getByText('Would Set Non Refundable', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).click();
+  await page.getByRole('heading', { name: 'Confirm demo apply', exact: true }).waitFor();
+  await page.locator('#apply-ack').check();
+  await page.getByRole('button', { name: 'Confirm demo apply', exact: true }).click();
+  await page.getByText('Non Refundable Verified', { exact: true }).waitFor();
+  await page.getByText('4 of 4 records completed', { exact: true }).waitFor();
+  await page.getByText('View cleanup details', { exact: true }).click();
+  await page.locator('#cleanup-details pre').filter({ hasText: 'SIGNED_OUT_VERIFIED' }).waitFor();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('link').filter({ hasText: 'report.json' }).click();
+  const download = await downloadPromise;
+  const report = JSON.parse(await fs.readFile(await download.path(), 'utf8'));
+  assert.equal(report.environment, 'offline-demo'); assert.equal(report.mode, 'apply'); assert.equal(report.targetRefundable, 0);
+  assert.equal(report.results[0].rows.filter(row => row.saveAttempted).length, 1);
+  await page.screenshot({ path: path.join(evidence, 'deposit-demo-result-desktop.png'), fullPage: true });
+  assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
+});

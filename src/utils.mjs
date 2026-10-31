@@ -124,5 +124,9 @@ export async function acquireLock(dir) {
     throw error;
   }
   await handle.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
-  return async () => { await handle.close(); await fs.unlink(lockFile).catch(() => {}); };
+  const release = async () => { await handle.close(); await fs.unlink(lockFile).catch(() => {}); };
+  // A supervising UI can close its handle while retaining the lock after an
+  // unexpected worker exit. Existing CLI callers keep the same release API.
+  release.preserve = async () => { await handle.close(); };
+  return release;
 }

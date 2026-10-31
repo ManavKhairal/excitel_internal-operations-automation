@@ -1,4 +1,53 @@
-# Current validation: approved North post-save retest (2026-10-28)
+# Current validation: local automation dashboard (2026-10-31)
+
+The development-copy baseline was **92 passed, 0 failed** before implementation. The completed dashboard passed all existing regressions plus 18 new backend tests and 3 browser UI tests.
+
+Actual final full-suite result (Node 22.23.2, installed Playwright 1.64.1 and Chromium):
+
+```text
+npm run check
+JavaScript syntax checks passed.
+
+npm test
+# tests 113
+# suites 0
+# pass 113
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 97894.261312
+TEST_EXIT_CODE=0
+```
+
+Full output is saved in [the local test log](output/web-test-evidence/test-results.log). The focused web command is `npm run test:web`; it selects the 21 new tests. No dependencies were added and the existing lockfile was preserved.
+
+Final screenshot review identified that deposit's per-record logout evidence was not yet represented in the cleanup card. The API now projects those existing outcomes into that card; API and browser assertions verify `SIGNED_OUT_VERIFIED`. After this display fix, `npm run check` passed and `npm run test:web` exited **0** with **21 passed, 0 failed**, duration **16782.818725 ms**. [Focused output](output/web-test-evidence/web-test-results.log) records the final web implementation.
+
+Backend verification covers registry discovery, strict task/environment/input validation, authenticated sessions, CSRF/origin/Host checks, bounded request bodies, dispatch, durable history, exact preview/apply binding, expiry and single-use approval, duplicate requests, shared CLI locking, settings, manual-login acknowledgement, graceful shutdown, failures and uncertain outcomes, interrupted-worker/restart lock retention, report retrieval/redaction, artifact traversal/symlink protection, and audit logs. A regression specifically checks that eligible but unattempted deposit apply rows remain pending.
+
+Browser tests started real local servers and Chromium. They exercised login/error states, every navigation item, both task forms, required-field validation, preview, explicit apply confirmation, measured progress, operator continuation after reload, failure and retry states, history filters, actual CSV/JSON downloads, settings, logout, and layouts at 1440×1000, 1024×768 and 390×844. They assert no unexpected browser JavaScript/console errors or failed network requests. Expected authentication denials and one deliberately injected service error are part of the tests.
+
+The real offline deposit worker was exercised through the HTTP API in both refundable directions and through the browser UI for a non-refundable apply. It used Playwright's synthetic pages and in-memory sheets, with one verified simulated save and three skipped rows for `demo.north`. Fixture ERP executions exercise the UI/API/shared execution boundary; the original ERP browser and CLI regressions exercise its unchanged domain behavior.
+
+Screenshots inspected during verification:
+
+- [Dashboard with execution history](output/web-test-evidence/dashboard-results-desktop.png)
+- [Preview record results](output/web-test-evidence/preview-results-desktop.png)
+- [Apply confirmation](output/web-test-evidence/apply-confirmation-desktop.png)
+- [Operator login prompt](output/web-test-evidence/operator-prompt-desktop.png)
+- [Real offline deposit result](output/web-test-evidence/deposit-demo-result-desktop.png)
+- [Mobile automation library](output/web-test-evidence/automations-mobile.png)
+
+Additional startup check: `npm run web` listened on `127.0.0.1:4310`; `/`, `/app.mjs`, and `/styles.css` returned 200 and unauthenticated `/api/tasks` returned 401. No automation was launched against company applications during this check.
+
+`npm run web:token` also exited 0, and its output was used without displaying the secret to verify real dashboard sign-in, discovery of both modules and logout (200). The server was gracefully restarted to load the final cleanup display change.
+
+Failures resolved during implementation: the first ERP CLI extraction eagerly loaded a deposit browser dependency into isolated ERP test copies; lazy loading fixed it and all CLI regressions passed. Browser checks initially found uppercase outcome formatting and an overly exact test locator for a required-field label; both were corrected. A first full-suite wrapper returned termination code 143 after printing 113 passing results; the full command was rerun and confirmed exit code 0 as recorded above.
+
+**Limits:** all dashboard validation was offline. No live employee changes, internal application login/MFA, production execution, Google writes, or staging connectivity checks were performed. Earlier live evidence below predates this dashboard work and is preserved as historical context. Deposit live execution stays disabled; ERP's visible browser and account/session permissions require operator-side staging verification.
+
+# Previous validation: approved North post-save retest (2026-10-28)
 
 After the user manually reset the two approved deposits and removed the completion entry, a fresh North-only run confirmed exact source-sheet membership, no South membership, no existing completion entry, and refundable=0 on both deposits. The visible browser saved each deposit once, verified both persisted values as 1, verified the final complete record set, logged out and required login again. Report status: **COMPLETED**, **2 save attempts / 2 save dispatches / 2 verified deposits**.
 

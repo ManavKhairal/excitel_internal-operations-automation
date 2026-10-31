@@ -8,6 +8,9 @@
   "scripts": {
     "start": "node src/cli.mjs",
     "login": "node src/cli.mjs --login-only",
+    "web": "node src/web/main.mjs",
+    "web:token": "node scripts/dashboard-token.mjs",
+    "test:web": "node --test --test-concurrency=1 tests/web*.test.mjs",
     "test": "node --test --test-concurrency=1 tests/*.test.mjs",
     "check": "node scripts/check.mjs"
   },

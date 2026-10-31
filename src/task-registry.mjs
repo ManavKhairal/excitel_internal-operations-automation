@@ -1,8 +1,42 @@
 import { StopError } from './utils.mjs';
 export const taskRegistry = Object.freeze({
-  'erp-deactivation': () => import('./erp-cli.mjs'),
+  'erp-deactivation': () => import('./erp-cli.mjs').then(module => module.main()),
   'deposit-refundability': () => import('./deposit-cli.mjs').then(module => module.main())
 });
+// Public task metadata drives the dashboard and generic execution form.
+// Each new task is registered here and dispatched by the shared task runner.
+export const taskCatalog = Object.freeze([
+  {
+    id: 'erp-deactivation', name: 'ERP employee deactivation',
+    description: 'Collect the current employees of an eligible partner in Procare, then preview or verify staging CoreHR deactivations.',
+    applications: ['Procare', 'CoreHR'], environments: ['staging'], modes: ['preview', 'apply'],
+    availability: 'Staging only. Manual SSO or MFA may require the operator in the opened browser.',
+    inputs: [
+      { name: 'partner', label: 'Exact partner name', type: 'text', required: true, maxLength: 200,
+        placeholder: 'Enter the exact staging partner name', help: 'The partner must be Terminated or Inactive.' },
+      { name: 'pagination', label: 'Employee collection', type: 'select', required: true,
+        defaultValue: 'auto', options: [{ value: 'auto', label: 'All pages automatically' }],
+        help: 'The complete list is recollected on every run. Guided pagination remains available through the CLI.' }
+    ]
+  },
+  {
+    id: 'deposit-refundability', name: 'Deposit refundability',
+    description: 'Validate tenant membership and individual deposit eligibility, then preview or simulate a verified refundable change.',
+    applications: ['Google Sheets (simulated)', 'phpMyAdmin (simulated)'], environments: ['offline-demo'], modes: ['preview', 'apply'],
+    availability: 'Offline demo with synthetic records only. Live preview and production writes are disabled.',
+    inputs: [
+      { name: 'usernames', label: 'Usernames', type: 'textarea', required: true, maxLength: 2600,
+        placeholder: 'demo.north\ndemo.south', help: 'One username per line, up to 20. Synthetic demo users: demo.north and demo.south.' },
+      { name: 'tenant', label: 'Tenant', type: 'select', required: false, defaultValue: '',
+        options: [{ value: '', label: 'Detect from both tenant sheets' }, { value: 'north', label: 'North' }, { value: 'south', label: 'South' }],
+        help: 'An explicitly selected tenant must match the source sheets.' },
+      { name: 'refundable', label: 'Target refundable value', type: 'select', required: true, defaultValue: '1',
+        options: [{ value: '1', label: '1 — Refundable' }, { value: '0', label: '0 — Non-refundable' }],
+        help: 'Only eligible uncovered, unbundled deposits are changed in the simulation.' }
+    ]
+  }
+]);
+
 export function selectTask(argv) {
   let task = 'erp-deactivation', specified = false;
   const args = [];
