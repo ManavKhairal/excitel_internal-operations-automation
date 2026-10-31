@@ -23,6 +23,8 @@ npm start -- --partner "EXACT STAGING PARTNER NAME"
 npm start -- --partner "EXACT STAGING PARTNER NAME" --apply
 npm start -- --task erp-deactivation --partner "EXACT STAGING PARTNER NAME"
 npm start -- --task deposit-refundability --help
+npm start -- --task workforce-access --help
+npm start -- --task procare-subscriber-synchronization --help
 
 Default is DRY RUN. Employee collection and pagination are automatic.
 --apply              Save staging status changes without an extra confirmation prompt.
