@@ -2,14 +2,14 @@
 
 Last updated: **31 October 2026**, Asia/Kolkata.
 
-This is the resume point for the project. The Workforce and centralized dashboard branches have been combined in this development copy. The historical operational evidence below remains scoped to the approvals recorded at the time; this integration was tested only with offline fixtures.
+This is the resume point for the project. The Workforce and centralized dashboard branches have been combined in this development copy. The historical operational evidence below remains scoped to the approvals recorded at the time; save behavior is tested with offline fixtures. The manual-deposit integration also passed read-only login, column, exact-lookup and logout checks against both live tenant sites, with zero deposit saves and zero Sheets requests.
 
 ## Start here next time
 
 - **The local dashboard now lists ERP deactivation, deposit refundability and Workforce Sales group access.** Workforce has tenant and grant/remove inputs, reviewed previews, separate apply confirmation, progress and saved reports. Start it with `npm run web` and read the private local token with `npm run web:token`. See [the dashboard guide](docs/web-dashboard.md).
 - **ERP employee deactivation works in staging**, including Inactive/Terminated partner support, automatic employee pagination, verified deactivation and logout.
 - **Deposit refundability has completed approved North production runs**, including multiple usernames, verified saves, logout and completion-sheet entries. The duplicate Edit inline problem is fixed and verified live.
-- **Important distinction:** live deposit runs used scoped local execution helpers plus the connected Google Sheets tools. The ordinary deposit CLI still supports offline demonstrations and blocks general production writes. A fully standalone production deposit runner is pending.
+- **Manual live deposits are now integrated into the dashboard and CLI.** Choose `production-manual`, paste exact usernames, select North/South and the refundable target, preview and confirm apply. CLI uses `--manual --tenant north|south`, with `--apply` for saves. This path skips all Sheets reads/writes and records `NOT_REQUESTED_MANUAL` in local reports. The sheet-based live path remains disabled. The historical deposit section below describes the earlier sheet-assisted implementation; use [the current deposit guide](docs/deposit-refundability.md) for manual operation. This update is validated offline; no real deposit was changed during implementation.
 - **Workforce access is now implemented on `feature/workforce-access` for staging.** The task supports granting or removing exact membership in the first Sales User Group in North, South or both tenants, using `--action grant|remove`. Grant remains the default; removal is explicit. Missing users in one tenant do not prevent processing the other. See [the Workforce guide](docs/workforce-access.md) and current validation below.
 - **The deposit foundation checkpoint `db3d5ff` is on `origin/feature/deposit-refundability`.** The local deposit branch also contains dashboard commit `2562dec`; the local Workforce branch combines that work with commit `e184007`. No merge of these feature branches to `main` or new push was performed during the dashboard integration.
 - No previously requested user update remains unfinished. Historical report usernames and local helper scripts are not a new execution queue.
@@ -88,7 +88,7 @@ Adding `--apply` enables staging saves. These are reference instructions, not an
 
 ## Feature 2 — deposit refundability correction
 
-**Status:** business rules and offline task module implemented; scoped North production execution demonstrated successfully. General standalone production CLI integration remains pending.
+**Status:** manual usernames are integrated into the dashboard and CLI for North and South, without Google Sheets. The older sheet-assisted runs are historical evidence. Live readiness passed read-only; current save behavior is tested offline. Use [the current deposit guide](docs/deposit-refundability.md).
 
 ### Final agreed rules
 
@@ -125,10 +125,11 @@ North was inspected and exercised live. **South has not been validated against i
 | --- | --- |
 | Offline deposit preview and apply simulation through the normal CLI | Working with synthetic browser pages and in-memory Sheets. |
 | Scoped North production updates demonstrated in this session | Working through explicitly scoped local helpers, with connected Google Sheets reads/writes coordinated by the assistant. |
-| Normal CLI production preview | Disabled: `livePreview.enabled` is false and reviewed selector fields are not populated. |
-| Normal CLI production database writes | Blocked by `LIVE_WRITES_DISABLED` in the CLI/workflow/browser adapter boundaries. |
+| Manual live preview | Available through `--manual --tenant north|south`, or the dashboard’s live manual environment. No Sheets access. |
+| Legacy sheet-based live preview | Disabled: `livePreview.enabled` is false. |
+| Manual live database writes | Explicit `--manual --tenant north|south --apply`, or a matching dashboard preview and live confirmation; scoped one-save payload checks and persisted readback. |
 | Standalone Google Sheets completion writes | Not implemented/enabled in the local Google transport; connected chat tools are a separate authentication path. |
-| New arbitrary production usernames through one general command | Pending generalization; previous helpers were restricted to specific approved usernames and deposit IDs. |
+| Direct input for new live usernames | Supported through manual mode, up to 20 users per tenant run; exact identities and eligibility are verified before editing. |
 
 Normal CLI demo references:
 
@@ -137,7 +138,7 @@ npm start -- --task deposit-refundability --demo --username demo.north
 npm start -- --task deposit-refundability --demo --username demo.north --apply
 ```
 
-`--demo` never reads or updates real users. Adding `--apply` without `--demo` does not currently enable the general production path. Do not remove the write guards just to make that command run.
+`--demo` never reads or updates real users. Live execution requires explicit `--manual` and `--tenant`; `--apply` enables saves for those inputs. The legacy path without `--manual` or `--demo` still blocks writes.
 
 ### Fixed issue: duplicate Edit inline links
 

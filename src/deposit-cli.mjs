@@ -5,11 +5,17 @@ export { saveDepositReport } from './task-runner.mjs';
 export async function main(argv = process.argv.slice(2)) {
   const { values: args } = parseArgs({ args: argv, options: {
     username: { type: 'string', multiple: true }, tenant: { type: 'string' }, refundable: { type: 'string', default: '1' },
-    demo: { type: 'boolean', default: false }, apply: { type: 'boolean', default: false },
+    manual: { type: 'boolean', default: false }, demo: { type: 'boolean', default: false }, apply: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false }
   }, strict: true });
   if (args.help) {
-    console.log(`Deposit refundability: Google Sheets eligibility -> per-row validation -> verified completion.
+    console.log(`Deposit refundability: exact users -> per-row validation -> verified changes.
+
+Live manual input, without Google Sheets:
+  npm start -- --task deposit-refundability --manual --tenant north --username USERNAME
+  npm start -- --task deposit-refundability --manual --tenant north --username USERNAME --refundable 1 --apply
+Repeat --username for each user. Select north or south explicitly.
+Manual mode skips all Google Sheets reads and writes; reports are saved locally.
 
 Offline preview (synthetic records only):
   npm start -- --task deposit-refundability --demo --username demo.north
@@ -23,14 +29,14 @@ Multiple inputs: repeat --username. Optional --tenant north|south (Delhi/DEL/Hyd
 
 Default is preview. --demo never accesses company systems or Google.
 The browser opens visibly by default (config headless: false).
-Production writes are disabled in code. Live preview is also disabled until
-Google authorization, database schema and UI selectors are reviewed.
+Live saves require --manual, --tenant and --apply. The legacy sheet-based live path remains disabled.
+Store PMA_NORTH_USERNAME/PMA_NORTH_PASSWORD (or PMA_SOUTH_*) in .env.
 Without --task, existing ERP commands keep their original behavior.`);
     return;
   }
   const result = await runTask('deposit-refundability', {
     usernames: args.username, tenant: args.tenant, refundable: args.refundable,
-    demo: args.demo, apply: args.apply, environment: args.demo ? 'offline-demo' : 'production-preview'
+    demo: args.demo, manual: args.manual, apply: args.apply, environment: args.demo ? 'offline-demo' : args.manual ? 'production-manual' : 'production-preview'
   });
   if (result.exitCode) process.exitCode = result.exitCode;
 }

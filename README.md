@@ -6,7 +6,7 @@ Run `npm run web` and open **http://127.0.0.1:4310**. In a second terminal, run
 `npm run web:token` to display the private local access token for sign-in.
 The dashboard provides schema-driven task forms, preview review and confirmed
 apply, live execution monitoring, existing CLI history, report downloads and
-non-sensitive settings. ERP and Workforce remain staging-only; deposit remains an offline demo.
+non-sensitive settings. ERP and Workforce remain staging-only; deposit supports live manual usernames without Google Sheets, plus an offline demo.
 The original CLI commands below continue to work and share the dashboard's run lock.
 
 See [installation, operation, recovery and adding tasks](docs/web-dashboard.md).
@@ -17,10 +17,10 @@ One Node.js + Playwright project with independently selected tasks:
 | Task | Command | Availability |
 | --- | --- | --- |
 | ERP employee deactivation | `npm start -- --partner "PARTNER"` or add `--task erp-deactivation` | Existing staging workflow; `--apply` enables staging saves. |
-| Deposit refundability | `npm start -- --task deposit-refundability --demo --username demo.north` | Offline preview/demo implemented; production preview and writes remain disabled. |
+| Deposit refundability | `npm start -- --task deposit-refundability --manual --tenant north --username USERNAME` | Live preview; `--apply` saves and verifies eligible deposits without Sheets. `--demo` remains available. |
 | Workforce Sales group access | `npm start -- --task workforce-access --username USERNAME --tenant both --action grant` | Grant/remove with `--action`; preview by default, `--apply` saves and verifies. |
 
-The deposit task checks the two tenant sheets, validates individual deposit records, simulates eligible refundable changes to the selected **0 or 1** target, verifies results, logs out, and records completion in a simulated sheet. See [deposit setup and rules](docs/deposit-refundability.md) for demo commands, current limits, and the remaining production-preview setup. No additional dependencies are required.
+For deposits, select **Live deposits — manual input**, paste up to 20 exact usernames (one per line), choose **North / Delhi** or **South / Hyderabad**, and select the refundable target (**1** or **0**). Run preview, review the report, then confirm the live apply. This mode skips all Google Sheets reads and writes, verifies each saved deposit, logs out and saves local reports. See [deposit setup and rules](docs/deposit-refundability.md). No additional dependencies are required.
 
 The [Workforce task](docs/workforce-access.md) uses independent `WORKFORCE_USERNAME` / `WORKFORCE_PASSWORD` credentials. It grants or removes membership in the first Sales User Group in North, South or both tenants, preserves other members/settings, skips already-correct membership, verifies saved results and signs out. Use `--action grant` (the default) or explicit `--action remove`, with `--apply` for saves. Missing users are reported per tenant while processing continues in the other tenant.
 
@@ -222,7 +222,7 @@ Save is the actual `[data-id="submit-form"]` button within `[data-id="partner-em
 
 ## Staging safeguards
 
-The two application origins are fixed in `src/browser.mjs`. There is no environment variable or CLI switch to turn this build into production automation.
+The two application origins are fixed in `src/browser.mjs`. ERP and Workforce remain restricted to staging. The separate deposit task supports explicit manual live runs against its fixed database tenant hosts.
 
 Top-level navigation to other origins and POST/PUT/PATCH/DELETE-style requests to unapproved origins are blocked. If either staging app calls a separate staging API or identity service, confirm its exact origin first and add it to that app's `additionalWriteOrigins` or `additionalNavigationOrigins` as needed. Login redirects and writes may need both entries. Never add production data API origins merely to make a blocked request work.
 

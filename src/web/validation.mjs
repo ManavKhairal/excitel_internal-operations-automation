@@ -7,7 +7,7 @@ export function validateRequest(body, maxUsers = 20) {
   onlyKeys(body, ['taskId', 'environment', 'mode', 'input', 'idempotencyKey', 'previewId', 'confirmed']);
   const task = taskCatalog.find(task => task.id === body.taskId);
   if (!task) throw new HttpError(400, 'UNKNOWN_TASK', 'Select an available automation task.');
-  if (!['staging', 'offline-demo'].includes(body.environment) || !task.environments.includes(body.environment)) throw new HttpError(400, 'ENVIRONMENT_DISABLED', 'Only the listed staging or offline demo environment is enabled. Production execution is disabled.');
+  if (!task.environments.includes(body.environment)) throw new HttpError(400, 'ENVIRONMENT_DISABLED', 'Choose an environment supported by the selected task.');
   if (!['preview', 'apply'].includes(body.mode) || !task.modes.includes(body.mode)) throw new HttpError(400, 'INVALID_MODE', 'Choose a mode supported by this task.');
   if (typeof body.idempotencyKey !== 'string' || !/^[a-zA-Z0-9_-]{16,100}$/.test(body.idempotencyKey)) throw new HttpError(400, 'INVALID_REQUEST_KEY', 'A unique request key of 16–100 characters is required.');
   assertObject(body.input, 'Task inputs');
@@ -22,7 +22,7 @@ export function validateRequest(body, maxUsers = 20) {
     if (!Array.isArray(body.input.usernames) || body.input.usernames.some(value => typeof value !== 'string')) throw new HttpError(400, 'INVALID_USERNAMES', 'Provide a list of usernames.');
     if (body.input.tenant !== undefined && !['', 'auto', 'north', 'south'].includes(body.input.tenant)) throw new HttpError(400, 'INVALID_TENANT', 'Select automatic tenant detection, north, or south.');
     try {
-      const valid = validateInput({ ...body.input, tenant: ['', 'auto'].includes(body.input.tenant) ? undefined : body.input.tenant, apply: body.mode === 'apply' }, maxUsers);
+      const valid = validateInput({ ...body.input, manual: body.environment === 'production-manual', tenant: ['', 'auto'].includes(body.input.tenant) ? undefined : body.input.tenant, apply: body.mode === 'apply' }, maxUsers);
       input = { usernames: valid.usernames, refundable: valid.refundable, ...(valid.tenant ? { tenant: valid.tenant } : {}) };
     } catch (error) { throw new HttpError(400, error.code || 'INVALID_INPUT', error.message); }
   } else if (task.id === 'workforce-access') {

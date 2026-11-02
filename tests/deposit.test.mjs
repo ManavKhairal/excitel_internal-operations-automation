@@ -375,3 +375,18 @@ test('Managed users layout mismatch fails without writing to another column', as
   await assert.rejects(sheets.recordCompletion('north', 'demo.north', '2026-10-28', 0), { code: 'COMPLETION_LAYOUT' });
   assert.equal(events(state, 'sheet-append').length, 0);
 });
+
+
+test('generic AJAX SQL acknowledgement is distinguished from the counted SELECT result before and after saves', async () => {
+  const { report, state } = await execute({ options: { sqlAcknowledgement: true } });
+  assert.equal(report.status, 'COMPLETED', JSON.stringify(report.results[0].error));
+  assert.equal(events(state, 'save').length, 1);
+  assert.equal(events(state, 'logout').length, 1);
+});
+
+
+test('SQL controls wait for phpMyAdmin AJAX handlers before clicks', async () => {
+  const { report, state } = await execute({ options: { delayedQueryReady: true } });
+  assert.equal(report.status, 'COMPLETED', JSON.stringify(report.results[0].error));
+  assert.equal(events(state, 'save').length, 1);
+});

@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import { TEST_TOKEN, deferred, fixtureExecutor, repository, startDashboard } from './web-fixtures.mjs';
 import { testBrowser } from './fixtures.mjs';
 import { workforceWebExecutor } from './workforce-web-fixtures.mjs';
+import { manualDepositFixture } from './deposit-web-fixtures.mjs';
 
 const evidence = path.join(repository, 'output', 'web-test-evidence');
 async function browserFor(t) {
@@ -59,7 +60,7 @@ test('browser dashboard navigation, input validation, preview/apply, history, do
   await go(page, 'Executions', 'Execution history');
   await page.getByText('No executions yet', { exact: true }).waitFor();
   await go(page, 'Settings', 'Workspace settings');
-  await page.getByText('Fresh on each run', { exact: true }).waitFor();
+  await page.locator('.app-session').filter({ hasText: 'Workforce' }).getByText('Fresh on each run', { exact: true }).waitFor();
   await page.getByLabel('Run offline demos without a visible browser').check();
   await page.getByRole('button', { name: 'Save preferences' }).click();
   await page.getByText('Preferences saved for future executions.', { exact: true }).waitFor();
@@ -169,6 +170,7 @@ test('browser launches the real synthetic deposit worker and verifies demo apply
   await login(page, app.base);
   await go(page, 'Run task', 'Run an automation');
   await page.getByLabel('Automation', { exact: true }).selectOption('deposit-refundability');
+  await page.getByLabel('Environment', { exact: true }).selectOption('offline-demo');
   await page.getByLabel('Usernames').fill('demo.north');
   await page.getByLabel('Target refundable value').selectOption('0');
   assert.equal(await page.getByLabel('Environment', { exact: true }).inputValue(), 'offline-demo');
@@ -224,5 +226,44 @@ test('browser runs Workforce removal preview, confirmed staging apply and verifi
   const report = JSON.parse(await fs.readFile(await download.path(), 'utf8'));
   assert.equal(report.task, 'workforce-access'); assert.equal(report.action, 'remove');
   assert.equal(report.results.filter(row => row.saveAttempted).length, 2);
+  assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
+});
+
+
+test('browser changes two directly entered deposit users with live confirmation and no Google Sheets', { timeout: 45000 }, async t => {
+  const fixtureBrowser = await testBrowser();
+  const fixture = manualDepositFixture(fixtureBrowser);
+  const app = await startDashboard({ execute: fixture.execute }); t.after(async () => { await app.dispose(); await fixtureBrowser.close(); });
+  const { page, errors, failedRequests } = await browserFor(t);
+  await login(page, app.base);
+  await go(page, 'Run task', 'Run an automation');
+  await page.getByLabel('Automation', { exact: true }).selectOption('deposit-refundability');
+  assert.equal(await page.getByLabel('Environment', { exact: true }).inputValue(), 'production-manual');
+  await page.locator('#input-usernames').fill('manual.First\n000123');
+  await page.getByRole('button', { name: 'Run preview', exact: true }).click();
+  assert.equal(await page.getByLabel('Tenant', { exact: true }).evaluate(input => input.validity.valueMissing), true);
+  assert.equal((await app.request('/api/executions')).data.executions.length, 0);
+  await page.getByLabel('Tenant', { exact: true }).selectOption('north');
+  await page.getByRole('button', { name: 'Run preview', exact: true }).click();
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).waitFor();
+  assert.equal(fixture.state.events.filter(event => event.action === 'save').length, 0);
+  assert.equal(await page.getByText('Would Set Refundable', { exact: true }).count(), 2);
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).click();
+  await page.getByRole('heading', { name: 'Confirm live deposit apply', exact: true }).waitFor();
+  await page.getByRole('dialog').getByText('Google Sheets will not be read or updated.', { exact: false }).waitFor();
+  await page.getByRole('button', { name: 'Confirm live deposit apply', exact: true }).click();
+  assert.equal(await page.locator('#apply-ack').evaluate(input => input.validity.valueMissing), true);
+  await page.locator('#apply-ack').check();
+  await page.getByRole('button', { name: 'Confirm live deposit apply', exact: true }).click();
+  await page.getByText('Refundable Verified', { exact: true }).nth(1).waitFor({ timeout: 20000 });
+  await page.getByText('5 of 5 records completed', { exact: true }).waitFor();
+  assert.deepEqual(fixture.state.events.filter(event => event.action === 'save').map(event => event.key), ['101', '301']);
+  assert.equal(fixture.state.events.filter(event => event.action.startsWith('sheet-')).length, 0);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('link').filter({ hasText: 'report.json' }).click();
+  const report = JSON.parse(await fs.readFile(await (await downloadPromise).path(), 'utf8'));
+  assert.equal(report.environment, 'production-manual'); assert.equal(report.inputSource, 'manual');
+  assert.ok(report.results.every(result => result.sheet.status === 'NOT_REQUESTED_MANUAL' && result.logout === 'SIGNED_OUT_VERIFIED'));
+  await page.screenshot({ path: path.join(evidence, 'deposit-manual-result-desktop.png'), fullPage: true });
   assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
 });

@@ -1,114 +1,91 @@
-# Deposit refundability task
+# Deposit refundability
 
-This module is implemented for local development and offline testing on `feature/deposit-refundability`. The existing ERP task is selected by default. Production deposit and Google Sheets writes are disabled in code. Production preview is disabled in configuration until the remaining UI and schema details are inspected.
+The dashboard and CLI accept **manual usernames for live security-deposit changes without Google Sheets**. The selected refundable target is `1` (refundable, default) or `0` (non-refundable). The offline demo and its simulated Sheets workflow remain available. ERP and Workforce keep their staging restrictions.
 
-## Run the offline demonstration
+## Use real usernames in the dashboard
 
-Task runs open a visible browser by default: `"headless": false` in `config/deposit-refundability.json`. This applies to the demo and future configured live previews. Automated fixture tests explicitly use headless mode. The existing ERP command already opens a visible browser.
+1. Start the dashboard with `npm run web`; open http://127.0.0.1:4310 and sign in with the local token (`npm run web:token`). Restart an older running server after this update, then reload and sign in again.
+2. Select **Run task → Deposit refundability** and environment **Live deposits — manual input**.
+3. Paste up to 20 exact usernames in **Usernames**, one per line. Case and leading zeroes are preserved; repeated usernames are processed once.
+4. Select **North / Delhi** or **South / Hyderabad**. This is required: manual mode does not infer a tenant from Sheets or try the other tenant. Use a separate run for each tenant.
+5. Choose **1 — Refundable** or **0 — Non-refundable**, then **Run preview**.
+6. Review every record, proposed change, skipped row and cleanup result. Preview does not save deposits.
+7. Choose **Review & apply**, review the live-deposit confirmation, check the acknowledgement and choose **Confirm live deposit apply**.
+8. Review verified outcomes and download `report.json` or `report.csv`.
 
-Preview the synthetic North user:
+Manual input is the source of authorization for these users; Sheets membership is not required. **No Google Sheets reads or writes occur**, and no Google access token is needed. Reports mark sheet status `NOT_REQUESTED_MANUAL`; this means Sheets recording was intentionally skipped, not that a completion entry exists.
+
+The manual environment uses the fixed hosts:
+
+| Tenant | Database origin | Database |
+| --- | --- | --- |
+| North / Delhi | `https://del-procare-mariadb.excitel.in` | `excitel_ticketing_system` |
+| South / Hyderabad | `https://hyd-procare-mariadb.excitel.in` | `excitel_ticketing_system_hyd` |
+
+Store credentials in the local, untracked `.env`:
+
+```dotenv
+PMA_NORTH_USERNAME=your-database-username
+PMA_NORTH_PASSWORD=your-database-password
+PMA_SOUTH_USERNAME=your-database-username
+PMA_SOUTH_PASSWORD=your-database-password
+```
+
+Only the selected tenant credentials are used. If they are missing, the dashboard opens its database browser and asks you to log in there, then continue in the execution view. The CLI requires configured credentials. Passwords are never task inputs or report fields. Live manual sessions always use a fresh visible browser; the headless-demo preference applies only to offline demos.
+
+## CLI
+
+Read-only live preview:
+
+```bash
+npm start -- --task deposit-refundability --manual --tenant north --username FIRST_USER --username SECOND_USER
+```
+
+Save eligible deposits as refundable:
+
+```bash
+npm start -- --task deposit-refundability --manual --tenant north --username FIRST_USER --username SECOND_USER --refundable 1 --apply
+```
+
+Use `--refundable 0` for non-refundable. Without `--apply`, the CLI only previews. The CLI's explicit `--apply` authorizes the listed inputs; the dashboard additionally requires a successful, matching, single-use preview from the last hour. A demo preview cannot authorize a live apply. `--demo` and `--manual` cannot be combined.
+
+The older sheet-based live path, invoked without `--manual` or `--demo`, remains disabled. `config.livePreview` and `GOOGLE_SHEETS_ACCESS_TOKEN` are unrelated to manual mode and do not need enabling.
+
+## Validation and saves
+
+- Query the selected tenant database’s `subscriber_deposit` joined to `subscriber`, using an encoded literal and binary comparison for the exact username. Arbitrary SQL is never accepted as input.
+- Require numeric unique `deposit_id`, one subscriber ID per username, exact username identity and known `0`/`1` flags. Missing records, ambiguous identities and partial result pages stop that user. The limit is 200 deposits per user.
+- Skip every deposit where `is_covered = 1` or `is_bundled = 1`. Skip eligible deposits already at the requested target.
+- In dashboard apply, compare current deposits against the approved preview before editing. Changed record sets, subscriber IDs, eligibility flags or refundable values stop with `PREVIEW_CHANGED` and require a fresh preview.
+- Recheck each record immediately before editing. The joined lookup disables grid editing in the inspected phpMyAdmin installation, so open a bounded single-table SELECT restricted to the verified subscriber ID and deposit IDs. Require identical records and flags in that view and verify the row's primary-key controls.
+- Double-click the exact refundable cell, fill the external `input.edit_box`, checkpoint `SAVE_STARTED_UNVERIFIED`, then press Enter exactly once. Permit only one scoped POST to `/pma/tbl_replace.php` for that deposit and target value. Reject arbitrary SQL, additional fields/rows, different tenants and duplicate saves.
+- Require a successful save acknowledgement and fresh joined-query readback of the same identity, eligibility flags and target value. An optimistic cell display does not count as verification.
+- Reuse one session for the selected tenant, log out, reopen to verify login is required, and close the browser. Google Sheets is never accessed in manual mode.
+
+North's `deposit_id` primary key, `table.table_results`, action-heading colspan, external editor and Enter payload were established by earlier local read-only inspections and explicitly scoped live runs. The shared manual adapter uses these controls and validates their presence at runtime. Both tenant flows are covered by offline browser fixtures. Read-only readiness checks exercise live navigation, required columns, an exact synthetic-username SELECT and logout; no real deposit saves are performed by those checks.
+
+The adapter waits for phpMyAdmin AJAX navigation to finish before clicking query controls. It handles CodeMirror and a native inline SQL textarea. Background software-version checks and favorite-table synchronization are answered locally instead of sending unrelated requests.
+
+The post-save phpMyAdmin markup can contain both SELECT and UPDATE tools inside one `.result_query`. `selectQueryControls()` selects the SELECT block and only its adjacent Edit inline tools. A generic AJAX SQL acknowledgement is excluded using the actual result’s row-count/empty-result status. Multiple SELECT blocks in the counted result still stop execution.
+
+## Reports and recovery
+
+Runs save private JSON/CSV reports under `output/`. Reports contain the environment (`production-manual`), `inputSource: manual`, requested target, per-user and per-deposit outcomes, before/after values, save attempts, verification times, logout results and explicit skipped-Sheets status.
+
+`PREVIEW_COMPLETED` means no deposit change was requested. `REFUNDABLE_VERIFIED` / `NON_REFUNDABLE_VERIFIED` mean a change was re-read successfully. An uncertain save becomes `SAVE_UNVERIFIED`; the batch stops and never retries Enter automatically. Already verified rows remain in the report. Review the database and report before running another apply after uncertainty.
+
+The CLI and dashboard share one filesystem lock. Closing the dashboard tab does not stop an execution. Keep the server running until cleanup finishes. A browser workflow cannot provide a transaction across several deposits; coordinate concurrent human edits.
+
+Exit codes: 0 for a completed run, 2 for workflow exceptions, 1 for invalid input or startup failures.
+
+## Offline demonstration and Sheets workflow
 
 ```bash
 npm start -- --task deposit-refundability --demo --username demo.north
-```
-
-Simulate the complete change, verification, logout, and sheet entry:
-
-```bash
-npm start -- --task deposit-refundability --demo --username demo.north --apply
-```
-
-Simulate the reverse change (`1 -> 0`) and record the username in the appropriate Managed users tab:
-
-```bash
+npm start -- --task deposit-refundability --demo --username demo.north --username demo.south --apply
 npm start -- --task deposit-refundability --demo --username demo.north --refundable 0 --apply
 ```
 
-Omit `--apply` for preview. `--refundable 1` is the default, so existing commands retain their behavior. Only exact values `0` and `1` are accepted. Each run has one target value for all its usernames.
+In the dashboard, explicitly choose **Offline demo**. It uses `https://deposit-fixture.invalid`, intercepted entirely inside Playwright, and an in-memory spreadsheet. Every run starts fresh. Real usernames passed to demo mode are never looked up in company systems. `demo.north` has eligible, covered, bundled and already-refundable rows; `demo.south` has one eligible row.
 
-| Target | Eligible change | Completion tab | Written columns |
-| --- | --- | --- | --- |
-| `--refundable 1` (default) | `0 -> 1` | North/South Changes reverted | Username / YES / Date |
-| `--refundable 0` | `1 -> 0` | North/South Managed users | Username only (column A) |
-
-The Managed users layout was inspected read-only: both tabs have a Username header in column A, with no Refundable or Date columns. The new direction follows that existing layout and does not create columns or modify the live workbook during development.
-
-Process synthetic North and South users in the same run:
-
-```bash
-npm start -- --task deposit-refundability --demo --username demo.north --username demo.south --apply
-```
-
-The demo uses `https://deposit-fixture.invalid`, intercepted entirely inside Playwright, and an in-memory spreadsheet. No Google or company requests are made. Every run starts with fresh synthetic data. `demo.north` has four deposit rows: one eligible, one covered, one bundled, and one already refundable. `demo.south` has one eligible row. A real username passed to the demo is not looked up in company systems.
-
-## Business rules
-
-1. Read only `North Tenant` and `South Tenant` for eligibility. Locate the Username/User ID column by its header; support a header below the first row. Read that column in bounded chunks. Preserve username case and leading zeroes.
-2. An exact username absent from both sheets is `USER_NOT_LISTED`. A username in both is `AMBIGUOUS_TENANT`. An explicitly supplied tenant must match its sheet. Failed sheet access blocks database access; it is never treated as an empty sheet.
-3. North/Delhi/DEL maps to the Delhi host; South/Hyderabad/HYD maps to the Hyderabad host. Both source sheets are checked to detect conflicting membership. Inputs are deduplicated; a run accepts up to 20 usernames.
-4. Look up deposits with a fixed SELECT joining `subscriber_deposit` to `subscriber`. Include `s.username AS automation_username` so each result remains tied to the exact requested username. SQL uses an encoded literal and binary username comparison. Arbitrary SQL is not an input option.
-5. Every row needs a reviewed unique deposit key, subscriber ID, exact username, and 0/1 flag values. Duplicate keys, multiple subscriber IDs for one username, unknown flags, missing records, or incomplete result pages stop processing that username before changes.
-6. Skip each row where `is_covered = 1` or `is_bundled = 1`. Continue with its other eligible rows. Skip eligible rows already at the requested target, reporting `ALREADY_REFUNDABLE` (target 1) or `ALREADY_NON_REFUNDABLE` (target 0). The covered/bundled exclusion applies to both directions.
-7. In apply simulation, re-read each eligible record before editing. Double-click its refundable cell, fill the requested target (`0` or `1`), persist a checkpoint, then press Enter exactly once. Re-query and require the same deposit key, subscriber ID, username and eligible flags, with the persisted requested refundable value. An optimistic UI value alone does not pass verification.
-8. Reuse one session per tenant. After database processing, log out once from each opened tenant, verify that reopening requires login, and close the browsers.
-9. Only then record users whose changed rows were fully verified. For target 1, North uses `North Changes reverted` and South uses `South Changes reverted`, with Username, `YES`, and the completion date in Asia/Kolkata (`YYYY-MM-DD`). For target 0, append only the username to `North Managed users` or `South Managed users`. Users already at the target, or with only ineligible rows, get a report but no new sheet entry.
-10. Completion recording checks for an existing exact Username/YES/Date entry and reads back a new entry. A duplicate for the same day is not appended. Historical entries on other dates are preserved. The Changes reverted adapter requires reviewed A/B/C column order. Managed users requires Username in column A and deduplicates by exact username across all dates. Multiple existing matches cause an error rather than another append. No entries are removed from any tab when changing direction.
-
-Both directions are supported by the shared workflow. The default remains **1**; target **0** must be requested explicitly. Live write restrictions are unchanged: these commands are offline demonstrations, not a general production executor.
-
-## Reports and failure handling
-
-Each run creates `output/<timestamp>-deposit-demo-<username>/`:
-
-- `report.json`: task/execution ID, mode, environment, times, per-user status, per-deposit outcomes, flags, before/after values, save attempts, verification times, logout results and sheet recording status.
-- `report.csv`: one row per deposit, including `targetRefundable` and skipped/already-at-target rows. A blocked username without deposits still has a row.
-- `demo-state.json`: synthetic final records, completion tabs and event sequence for review.
-- `error.json`: startup or other errors outside the workflow, when an output directory was created.
-
-`PREVIEW_COMPLETED` explicitly means no deposit change was requested. `REFUNDABLE_VERIFIED` (target 1) or `NON_REFUNDABLE_VERIFIED` (target 0) means the simulated change was re-read successfully. `SAVE_STARTED_UNVERIFIED` is persisted before Enter. An uncertain save becomes `SAVE_UNVERIFIED`; the batch stops and does not repeat the write.
-
-If some rows changed and another failed, the report retains those individual outcomes and withholds the user's completion entry (`BLOCKED_PARTIAL_RESULT`). Previously completed users can still be recorded after verified logout. Logout or browser-close failures preserve verified deposit results but defer sheet recording.
-
-A sheet failure is separate from database verification. `recordCompletion()` supports a reviewed sheet-only recovery using the saved user result; it never opens a database or retries Enter. A lost append response is resolved by rereading existing entries before another append. There is no automatic production recovery command in this phase.
-
-Exit codes: 0 for a completed preview/demo; 2 for workflow exceptions; 1 for invalid input, disabled live operations or startup failures. The existing project lock prevents concurrent CLI runs. File-based duplicate checks do not coordinate multiple independent machines.
-
-## Verification after a grid save
-
-phpMyAdmin 4.4 appends the saved UPDATE statement and its tools inside the same `.result_query` container as the original SELECT. The shared `selectQueryControls()` helper selects the visible SELECT `.sqlOuter` block and only its immediately following `.tools` controls. Both the reusable adapter and local inspection/apply helpers use this selector. Multiple visible SELECT blocks still stop the run; the code never guesses by taking the first link.
-
-The offline browser fixture reproduces this post-save markup. The regression verifies two eligible deposits, one Enter per deposit, successful readback after each save, one logout and one completion entry. Existing non-persistence and uncertain-save tests still prevent repeated writes.
-
-## Next: configure authorized production preview
-
-The initial module was built and tested offline. A subsequent authorized North inspection checked source membership through the connected Google account, read the live schema and selected deposit records, and verified logout. Its [private preview report](../output/2026-10-27T18-11-11-080Z-deposit-north-readonly-inspection/report.json) records zero saves and zero sheet writes. Standalone Google authentication remains pending.
-
-The North inspection confirmed `deposit_id` is a non-null bigint primary key and results use `table.table_results`. phpMyAdmin 4.4.15.10 removes the submitted SQL's final semicolon from displayed results and groups four action cells under a `colspan="4"` heading. The adapter handles these display details, with offline regressions.
-
-The joined lookup including `automation_username` disables grid editing in this installation. A separate single-table SELECT restricted to the previously verified subscriber ID and exact deposit IDs exposes the grid controls. Any future production write implementation must bind that view back to the verified lookup records before editing. A later, separately approved one-user North execution confirmed the external `input.edit_box` overlay, Enter submission to `tbl_replace.php`, persisted changes and logout. That execution used a scoped local helper and the connected Google Sheets tools; it did not enable general production CLI writes. South has not been inspected. Live configuration and write gates remain disabled.
-
-These are the remaining setup steps, not instructions to turn on live changes now:
-
-1. Authorize the standalone application for Google Sheets reads, independently of the ChatGPT Drive connection. The initial adapter accepts a short-lived OAuth access token through local `GOOGLE_SHEETS_ACCESS_TOKEN`. Use the read-only Sheets scope and an account allowed to read this workbook. API errors do not print tokens or raw response bodies. Refreshable organization-approved authentication can replace the token provider later.
-2. Confirm the exact live source headers and completion column/date layouts. A Google connection in this chat does not automatically authenticate a local Node.js process.
-3. Inspect phpMyAdmin without editing deposit data. Confirm the true deposit primary key, rendered results table, inline-editor element, login/logout behavior, returned SQL markup, and how result counts/pagination are shown. The user-supplied column headings alone do not establish the deposit key.
-4. Review the phpMyAdmin read-request allowlist. The preview permits only the fixed tenant origin, login requests, known read pages, and generated SELECT queries. UI variants may require further reviewed read endpoints. Unexpected requests and dialogs stop the preview.
-5. Fill the reviewed selector fields in `config/deposit-refundability.json`. They currently remain null and `livePreview.enabled` is false. The runtime refuses to launch a production preview while this setup is incomplete.
-6. Store credentials locally as `PMA_NORTH_USERNAME`, `PMA_NORTH_PASSWORD`, `PMA_SOUTH_USERNAME`, and `PMA_SOUTH_PASSWORD`. Never put passwords or phpMyAdmin session tokens in the task input or repository. Sessions use ephemeral browser contexts; URL tokens are obtained through normal UI navigation.
-7. Supply one username for an explicitly authorized read-only preview. Review its exact deposit keys, flags and proposed row actions before the later production-write phase.
-
-Both production write adapters independently reject writes, including if `--apply` is supplied. Enabling live preview does not enable production saves or sheet appends. The production save and append paths will be completed and reviewed only after the preview details are confirmed and actual updates are authorized.
-
-Current limitations: the initial parser rejects partial/paginated result sets rather than guessing remaining rows; the reusable row editor remains limited to the offline fixture while the approved North execution used a separate scoped helper; one username is processed at a time; the default row limit is 200 deposits per username. A browser UI cannot provide a database transaction across multiple rows, so concurrent human edits still need operational coordination during future approved changes.
-
-## Code layout
-
-- `src/task-registry.mjs`: static task selection.
-- `src/erp-cli.mjs`: existing ERP command, with the same defaults.
-- `src/deposit-cli.mjs`: deposit arguments, lock, reports and service wiring.
-- `src/tasks/deposit-refundability.mjs`: reusable business workflow.
-- `src/integrations/deposit-sheets.mjs`: source membership and completion validation; Google read transport.
-- `src/integrations/phpmyadmin.mjs`: fixed lookup, DOM parsing, row editor and logout; disabled live-write boundary.
-- `src/demo/deposit-demo.mjs`: offline browser and spreadsheet fixtures.
-
-Official API references: [reading values](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get) and [appending values](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/append). Future live appends must use RAW input and verify readback; they are currently disabled.
+Only the demo's sheet-based workflow checks both source tabs for exact tenant membership, rejects missing/ambiguous users and records verified completion after logout. Target 1 uses Changes reverted (Username/YES/India date); target 0 uses Managed users (Username only). It deduplicates and verifies simulated entries. `recordCompletion()` remains a sheet-only recovery helper for that workflow; it never replays a database save. Live Google writes remain disabled.

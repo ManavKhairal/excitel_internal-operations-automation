@@ -10,7 +10,7 @@ try {
   app.server.on('error', error => { console.error(`Dashboard could not listen: ${error.code || 'SERVER_ERROR'}.`); process.exitCode = 1; });
   app.server.listen(port, '127.0.0.1', () => {
     console.log(`Automation dashboard: http://127.0.0.1:${port}`);
-    console.log('Staging and offline demo only. Production execution is disabled.');
+    console.log('Manual live deposits, staging workflows and offline demo are available. Preview and confirmation are required for dashboard apply.');
     console.log('To display your private dashboard access token in a separate terminal: npm run web:token');
   });
   let stopping = false;

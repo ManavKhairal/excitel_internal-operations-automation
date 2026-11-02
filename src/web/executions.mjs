@@ -222,8 +222,15 @@ export class ExecutionManager {
     try {
       execution.status = 'running'; execution.startedAt = now(); execution.stage = 'Starting automation';
       await this.persist(execution);
-      const input = { ...execution.input, apply: execution.mode === 'apply', environment: execution.environment, ...(execution.taskId === 'deposit-refundability' ? { demo: true } : {}) };
-      const result = await this.execute({ taskId: execution.taskId, input, root: this.root, outputDir: execution.directory, settings: { ...this.settings } },
+      const input = { ...execution.input, apply: execution.mode === 'apply', environment: execution.environment, ...(execution.taskId === 'deposit-refundability' ? execution.environment === 'offline-demo' ? { demo: true } : { manual: true } : {}) };
+      let approvedDeposits;
+      if (execution.environment === 'production-manual' && input.apply) {
+        const preview = await this.find(execution.previewId);
+        const report = await readJson(preview.directory, 'report.json');
+        if (!Array.isArray(report?.results) || report.inputSource !== 'manual' || report.results.length !== input.usernames.length) throw new HttpError(409, 'PREVIEW_REQUIRED', 'The approved deposit preview is unavailable. Run a fresh preview.');
+        approvedDeposits = report.results.map(({ username, tenant, rows }) => ({ username, tenant, rows }));
+      }
+      const result = await this.execute({ taskId: execution.taskId, input, root: this.root, outputDir: execution.directory, settings: { ...this.settings }, ...(approvedDeposits ? { approvedDeposits } : {}) },
         { onEvent: event => this.event(execution, event), ask: message => this.ask(execution, message) });
       const report = await readJson(execution.directory, 'report.json');
       execution.status = report ? statusOf(report, result?.exitCode || 0) : 'interrupted';
@@ -270,8 +277,9 @@ export class ExecutionManager {
       applications.push({ name: name === 'corehr' ? 'CoreHR' : 'Procare', environment: 'staging', available: true, session: prepared ? 'saved' : 'not_prepared' });
     }
     applications.push({ name: 'Deposit database & Google Sheets', environment: 'offline-demo', available: true, session: 'not_prepared' });
+    applications.push({ name: 'Deposit database (manual usernames, no Sheets)', environment: 'production-manual', available: true, session: 'fresh_per_run' });
     applications.push({ name: 'Workforce', environment: 'staging', available: true, session: 'fresh_per_run' });
-    return { ...this.settings, environment: 'staging', productionEnabled: false, concurrency: 1, host: '127.0.0.1', operatorTimeoutMinutes: 10, applications };
+    return { ...this.settings, environment: 'staging', productionEnabled: true, depositManualEnabled: true, concurrency: 1, host: '127.0.0.1', operatorTimeoutMinutes: 10, applications };
   }
   async updateSettings(input) {
     return this.serialize(() => this.updateSettingsLocked(input));

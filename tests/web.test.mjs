@@ -8,6 +8,7 @@ import { taskCatalog } from '../src/task-registry.mjs';
 import { progressOf } from '../src/web/reports.mjs';
 import { testBrowser } from './fixtures.mjs';
 import { workforceWebExecutor } from './workforce-web-fixtures.mjs';
+import { manualDepositFixture } from './deposit-web-fixtures.mjs';
 import { TEST_TOKEN, deferred, fixtureExecutor, makeRoot, pause, requestBody, startDashboard } from './web-fixtures.mjs';
 
 test('dashboard requires a local authenticated session, protects mutations and never serves private files', async t => {
@@ -44,7 +45,7 @@ test('task discovery is registry-driven, settings expose safe supported values a
   assert.ok(tasks.data.tasks.every(task => !task.environments.includes('production')));
   assert.deepEqual((await app.request('/api/executions')).data.executions, []);
   const settings = (await app.request('/api/settings')).data.settings;
-  assert.equal(settings.productionEnabled, false); assert.equal(settings.concurrency, 1); assert.equal(settings.host, '127.0.0.1');
+  assert.equal(settings.productionEnabled, true); assert.equal(settings.depositManualEnabled, true); assert.equal(settings.concurrency, 1); assert.equal(settings.host, '127.0.0.1');
   assert.equal(settings.applications.find(app => app.name === 'Workforce').session, 'fresh_per_run');
   assert.doesNotMatch(JSON.stringify(settings), /PASSWORD|access_token|storageState|cookie|\.env/);
   assert.equal((await app.request('/api/settings', { method: 'PATCH', body: { screenshots: false, demoHeadless: true } })).status, 200);
@@ -365,4 +366,33 @@ test('Workforce grant and removal run through validated web dispatch, shared run
     assert.equal((await app.request(done.artifacts.find(item => item.name === 'report.csv').url)).status, 200);
   }
   assert.equal((await app.request('/api/executions?task=workforce-access')).data.executions.length, 4);
+});
+
+
+test('manual live deposit API requires tenant and matching preview, binds dispatch to reviewed records and blocks changed deposits', { timeout: 30000 }, async t => {
+  const browser = await testBrowser(); t.after(() => browser.close());
+  const fixture = manualDepositFixture(browser);
+  const dispatched = [];
+  const app = await startDashboard({ execute: (job, callbacks) => { dispatched.push(job); return fixture.execute(job, callbacks); } }); t.after(() => app.dispose());
+  const request = overrides => requestBody({ taskId: 'deposit-refundability', environment: 'production-manual', input: { usernames: ['manual.First'], tenant: 'north', refundable: 1 }, ...overrides });
+  for (const tenant of [undefined, '', 'auto']) {
+    const invalid = await app.request('/api/executions', { method: 'POST', body: request({ input: { usernames: ['manual.First'], tenant } }) });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.data.error.code, 'TENANT_REQUIRED');
+  }
+  assert.equal((await app.request('/api/executions', { method: 'POST', body: request({ mode: 'apply' }) })).status, 400);
+  const preview = await app.request('/api/executions', { method: 'POST', body: request() });
+  const checked = await app.finish(preview.data.execution.id, { timeout: 12000 });
+  assert.equal(checked.status, 'succeeded', JSON.stringify(checked.error));
+  assert.equal(dispatched[0].input.manual, true); assert.equal(dispatched[0].input.demo, undefined);
+  const changedTenant = await app.request('/api/executions', { method: 'POST', body: request({ mode: 'apply', previewId: checked.id, confirmed: true, input: { usernames: ['manual.First'], tenant: 'south', refundable: 1 } }) });
+  assert.equal(changedTenant.status, 409);
+  fixture.state.deposits.push({ username: 'manual.First', key: '999', subscriberId: '10', isCovered: 0, isBundled: 0, refundable: 0 });
+  const apply = await app.request('/api/executions', { method: 'POST', body: request({ mode: 'apply', previewId: checked.id, confirmed: true }) });
+  const final = await app.finish(apply.data.execution.id, { timeout: 12000 });
+  assert.equal(final.status, 'partial');
+  assert.equal(final.report.results[0].error.code, 'PREVIEW_CHANGED');
+  assert.equal(dispatched[1].approvedDeposits[0].rows.length, 4);
+  assert.equal(fixture.state.events.filter(event => event.action === 'save').length, 0);
+  assert.equal(fixture.state.events.filter(event => event.action.startsWith('sheet-')).length, 0);
 });

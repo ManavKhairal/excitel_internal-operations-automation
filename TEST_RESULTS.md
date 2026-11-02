@@ -1,4 +1,14 @@
-# Current validation: Workforce access in the web dashboard (2026-10-31)
+# Current validation: manual live deposits without Google Sheets (2026-10-31)
+
+Manual usernames are wired through the dashboard, HTTP validation, worker and shared task runner. Both target values, exact tenant/database binding, preview approval, row-change detection, external grid editing, one-save payload validation, persisted readback and skipped Sheets recording are covered by offline fixtures.
+
+`npm run check` and `git diff --check` passed. A full regression run passed **162 tests, 0 failures** before the last site compatibility adjustments. The final focused run of `tests/deposit-manual.test.mjs` and `tests/web-ui.test.mjs` passed **16 tests, 0 failures**, including the complete two-user preview/apply/download workflow. An earlier browser test exceeded its eight-second wait during background checks; its batch wait is now bounded at twenty seconds and cleanup drains the app before closing the fixture browser. The final two-user case completed in six seconds.
+
+Live **read-only** readiness passed for North and South: login, expected deposit columns, an exact synthetic-username SELECT and verified logout. These checks performed **zero deposit saves and zero Sheets requests**. They established South’s `excitel_ticketing_system_hyd` database, required AJAX navigation handling, background preference checks and the separate generic SQL acknowledgement. Save behavior remains validated with offline fixtures rather than unrequested real-user changes.
+
+The local dashboard was started with the updated task registry. An authenticated browser check verified the live manual environment, required tenant selection, empty usernames field and no page errors. Evidence: [live form](output/web-test-evidence/deposit-manual-live-form.png) and [two-user fixture result](output/web-test-evidence/deposit-manual-result-desktop.png).
+
+# Previous validation: Workforce access in the web dashboard (2026-10-31)
 
 The dashboard commit from `feature/deposit-refundability` was merged into `feature/workforce-access`. Workforce is now the third registered dashboard task, with explicit tenant and grant/remove controls, preview and apply, stage progress, record results, CSV/JSON reports, and cleanup status. The CLI and dashboard use the same Workforce task runner. A visible browser can prompt the operator for manual SSO/MFA when needed.
 

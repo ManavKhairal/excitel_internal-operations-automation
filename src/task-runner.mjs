@@ -27,11 +27,11 @@ async function readConfig(root, filename, positiveKeys) {
 // The caller may already own the shared filesystem lock (the web manager does).
 // Output paths and settings are server-side values, never browser-supplied paths.
 export async function runTask(taskId, input, {
-  root = defaultRoot, outputDir, ask, onEvent = async () => {}, lockHeld = false, settings = {}, openWorkforceSession
+  root = defaultRoot, outputDir, ask, onEvent = async () => {}, lockHeld = false, settings = {}, openWorkforceSession, openDepositSession, approvedDeposits
 } = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new StopError('INPUT', 'Task input must be an object.');
   if (input.apply !== undefined && typeof input.apply !== 'boolean') throw new StopError('INPUT', 'Apply must be true or false.');
-  const context = { root, outputDir, ask, onEvent, lockHeld, settings, openWorkforceSession };
+  const context = { root, outputDir, ask, onEvent, lockHeld, settings, openWorkforceSession, openDepositSession, approvedDeposits };
   if (taskId === 'erp-deactivation') return runErp(input, context);
   if (taskId === 'deposit-refundability') return runDeposit(input, context);
   if (taskId === 'workforce-access') return runWorkforce(input, context);
@@ -178,17 +178,19 @@ export async function saveDepositReport(directory, report) {
   await fs.writeFile(path.join(directory, 'report.csv'), lines.join('\n') + '\n', { mode: 0o600 });
 }
 
-async function runDeposit(input, { root, outputDir, onEvent, lockHeld, settings }) {
-  const { assertPreviewConfigured, createPmaPreview } = await import('./integrations/phpmyadmin.mjs');
+async function runDeposit(input, { root, outputDir, ask, onEvent, lockHeld, settings, openDepositSession, approvedDeposits }) {
+  const { assertPreviewConfigured, createPmaPreview, createPmaManual } = await import('./integrations/phpmyadmin.mjs');
   const config = await readConfig(root, 'deposit-refundability.json', ['timeoutMs', 'maxUsers', 'maxDepositsPerUser']);
   if (config.headless !== undefined && typeof config.headless !== 'boolean') throw new StopError('CONFIG', 'headless must be true or false.');
-  if (typeof settings.demoHeadless === 'boolean') config.headless = settings.demoHeadless;
+  if (input.demo === true && typeof settings.demoHeadless === 'boolean') config.headless = settings.demoHeadless;
   const request = validateInput(input, config.maxUsers);
   const demo = input.demo === true;
-  const environment = demo ? 'offline-demo' : 'production-preview';
+  const manual = input.manual === true;
+  if (demo && manual) throw new StopError('WRONG_ENVIRONMENT', 'Choose either manual live execution or the offline demo.');
+  const environment = demo ? 'offline-demo' : manual ? 'production-manual' : 'production-preview';
   if (input.environment !== undefined && input.environment !== environment) throw new StopError('WRONG_ENVIRONMENT', 'The selected deposit environment does not match its execution mode.');
   // Preserve the legacy CLI gates before credentials, browser creation or API access.
-  if (!demo) {
+  if (!demo && !manual) {
     if (request.apply) throw new StopError('LIVE_WRITES_DISABLED', 'Production database and sheet updates are disabled. No external action was attempted.');
     assertPreviewConfigured(config);
   }
@@ -198,11 +200,17 @@ async function runDeposit(input, { root, outputDir, onEvent, lockHeld, settings 
   let services, report;
   try {
     await privateDir(directory);
-    await stage('starting', demo ? 'Starting the isolated offline browser and in-memory sheets.' : 'Starting the reviewed read-only deposit services.');
+    await stage('starting', demo ? 'Starting the isolated offline browser and in-memory sheets.' : manual ? 'Using the supplied usernames and selected tenant. Google Sheets is not used.' : 'Starting the reviewed read-only deposit services.');
     if (demo) {
       const { createDemoServices } = await import('./demo/deposit-demo.mjs');
       services = await createDemoServices(config);
       console.log('OFFLINE DEMO: synthetic browser pages and an in-memory spreadsheet. No company access.');
+    } else if (manual) {
+      await loadEnvironment(root);
+      services = {
+        openDatabase: tenant => (openDepositSession || createPmaManual)(tenant, config, { username: process.env[`PMA_${tenant.toUpperCase()}_USERNAME`], password: process.env[`PMA_${tenant.toUpperCase()}_PASSWORD`] }, { apply: request.apply, ask }),
+        close: async () => {}
+      };
     } else {
       await loadEnvironment(root);
       services = {
@@ -212,7 +220,7 @@ async function runDeposit(input, { root, outputDir, onEvent, lockHeld, settings 
       };
     }
     // Wrap service operations to emit genuine stages without changing business rules.
-    const sheets = {
+    const sheets = manual ? undefined : {
       membership: async username => { await stage('validating', 'Checking membership in both tenant sheets.', username); return services.sheets.membership(username); },
       recordCompletion: async (...args) => { await stage('recording', 'Recording and verifying simulated sheet completion.', args[1]); return services.sheets.recordCompletion(...args); }
     };
@@ -223,15 +231,15 @@ async function runDeposit(input, { root, outputDir, onEvent, lockHeld, settings 
         lookup: async username => { await stage('processing', 'Reading the exact deposit records and current eligibility.', username); return database.lookup(username); },
         prepareRefundable: async (row, target) => {
           const saveOnce = await database.prepareRefundable(row, target);
-          return async () => { await stage('saving', 'Attempting one simulated save, followed by fresh verification.', row.username); return saveOnce(); };
+          return async () => { await stage('saving', `Attempting one ${demo ? 'simulated' : 'live'} save, followed by fresh verification.`, row.username); return saveOnce(); };
         },
         logout: async () => { await stage('cleanup', `Signing out of the ${tenant} deposit session and verifying logout.`); return database.logout(); },
         close: () => database.close()
       };
     };
-    console.log(`MODE: ${request.apply ? 'DEMO APPLY' : 'PREVIEW — no deposit or sheet writes'}`);
+    console.log(`MODE: ${request.apply ? demo ? 'DEMO APPLY' : 'LIVE MANUAL APPLY — Google Sheets skipped' : 'PREVIEW — no deposit or sheet writes'}`);
     console.log(`TARGET: refundable=${request.refundable}`);
-    report = await runDepositTask(request, { sheets, openDatabase, config, environment, checkpoint: async value => {
+    report = await runDepositTask(request, { sheets, openDatabase, config, environment, approvedDeposits, checkpoint: async value => {
       report = value; await saveDepositReport(directory, value); await onEvent({ type: 'checkpoint' });
     } });
     for (const result of report.results) {

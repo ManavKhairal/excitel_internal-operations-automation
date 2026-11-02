@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
-import { PhpMyAdmin } from '../integrations/phpmyadmin.mjs';
+import { PhpMyAdmin, approvedDepositSave } from '../integrations/phpmyadmin.mjs';
 import { DepositSheets } from '../integrations/deposit-sheets.mjs';
+import { TENANTS, TENANT_DATABASES } from '../tasks/deposit-refundability.mjs';
 
 export const demoUsernames = ['demo.north', 'demo.south'];
 export function demoData() {
@@ -44,50 +45,58 @@ export function memorySheetTransport(state, options = {}) {
 }
 const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
-// Requests are all fulfilled in process. Even fixture programming errors cannot
-// reach a company host: any request outside this synthetic origin is aborted.
+// Every request is fulfilled in process or aborted, including manual fixtures
+// using the fixed tenant origins. These contexts never send network traffic.
 export async function createDemoDatabase(browser, state, tenant, config, options = {}) {
   const context = await browser.newContext({ serviceWorkers: 'block' });
   await context.exposeFunction('__fixtureQueryEdit', query => { state.events.push({ action: 'query-edit', tenant, query }); });
-  const origin = 'https://deposit-fixture.invalid';
-  let selected = [], currentQuery = 'SELECT * FROM `subscriber_deposit`', signedIn = false;
+  const origin = options.manualGrid ? TENANTS[tenant] : 'https://deposit-fixture.invalid';
+  const database = options.manualGrid ? TENANT_DATABASES[tenant] : TENANT_DATABASES.north;
+  let selected = [], currentQuery = 'SELECT * FROM `subscriber_deposit`', signedIn = false, armed = null;
   const loginHtml = '<form action="/pma/index.php" method="post"><input id="input_username" name="pma_username"><input id="input_password" name="pma_password" type="password"><input type="submit" id="input_go" value="Go"></form>';
   const html = () => {
-    const fields = [['key', 'deposit_id'], ['username', 'automation_username'], ['subscriberId', 'subscriber_id'], ['isCovered', 'is_covered'], ['isBundled', 'is_bundled'], ['refundable', 'refundable']];
+    const fields = [['key', 'deposit_id'], ...(!options.manualGrid || currentQuery.includes('automation_username') ? [['username', 'automation_username']] : []), ['subscriberId', 'subscriber_id'], ['isCovered', 'is_covered'], ['isBundled', 'is_bundled'], ['refundable', 'refundable']];
     const total = options.partialResults ? selected.length + 1 : selected.length;
     const actions = options.actionColumns ? '<td></td><td>Edit</td><td>Copy</td><td>Delete</td>' : '';
-    const rows = selected.map(row => `<tr data-key="${escape(row.key)}">${actions}${fields.map(([field]) => `<td class="data grid_edit click2" data-field="${field}"><span>${escape(row[field])}</span></td>`).join('')}</tr>`).join('');
+    const rows = selected.map(row => `<tr data-key="${escape(row.key)}">${actions}${fields.map(([field]) => `<td class="data grid_edit click2" data-field="${field}">${field === 'key' && options.manualGrid ? `<input class="where_clause" type="hidden" value="subscriber_deposit.deposit_id=${escape(options.wrongClause ? '999999' : row.key)}">` : ''}<span>${escape(row[field])}</span></td>`).join('')}</tr>`).join('');
     return `<!doctype html><html><body>
       <a href="/pma/index.php?logout=1"><img alt="Log out"></a>
-      <a class="hover_show_full" href="/pma/db_structure.php?db=excitel_ticketing_system">excitel_ticketing_system</a>
-      <a class="hover_show_full" href="/pma/sql.php?db=excitel_ticketing_system&table=subscriber_deposit">subscriber_deposit</a>
+      <a class="hover_show_full" href="/pma/db_structure.php?db=${database}">${database}</a>
+      <a class="hover_show_full" href="/pma/sql.php?db=${database}&table=subscriber_deposit">subscriber_deposit</a>
+      ${options.sqlAcknowledgement ? `<div class="result_query"><div class="success">Your SQL query has been executed successfully.</div><div class="sqlOuter"><pre>${escape(currentQuery)}</pre></div><div class="tools"><a href="#" class="inline_edit_sql">Edit inline</a></div></div>` : ''}
       <div class="result_query"><div class="success">${selected.length ? `Showing rows 0 - ${selected.length - 1} (${total} total, Query took 0.01 seconds.)` : 'MySQL returned an empty result set (zero rows).'}</div><div class="sqlOuter"><pre>${escape(options.stripSemicolon ? currentQuery.replace(/;$/, '') : currentQuery)}</pre></div><div class="tools"><a href="#" class="inline_edit_sql">Edit inline</a></div>${options.duplicateSelectQuery ? `<div class="sqlOuter"><pre>${escape(currentQuery)}</pre></div><div class="tools"><a href="#" class="inline_edit_sql">Edit inline</a></div>` : ''}</div>
-      <form id="query-form" method="post" action="/pma/sql.php"><div class="CodeMirror" hidden><textarea name="sql_query" rows="4" cols="100">${escape(currentQuery)}</textarea></div><input id="sql_query_edit_save" type="submit" value="Go" hidden></form>
+      <form id="query-form" method="post" action="/pma/sql.php"><div class="${options.nativeSqlEditor ? 'plain-editor' : 'CodeMirror'}" hidden><textarea ${options.nativeSqlEditor ? 'id="sql_query_edit"' : ''} name="sql_query" rows="4" cols="100">${escape(currentQuery)}</textarea></div><input id="sql_query_edit_save" type="submit" value="Go" hidden></form>
       <table class="sql-results"><thead><tr>${options.actionColumns ? '<th colspan="4"></th>' : ''}${fields.map(([, name]) => `<th data-column="${name}">${name}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
       <script>
-      const cm=document.querySelector('.CodeMirror'), text=cm.querySelector('textarea');
+      ${options.delayedQueryReady ? 'window.AJAX={active:true};setTimeout(()=>{window.AJAX.active=false;},150);' : ''}
+      const cm=document.querySelector(${options.nativeSqlEditor ? "'.plain-editor'" : "'.CodeMirror'"}), text=cm.querySelector('textarea');
       cm.CodeMirror={getValue:()=>text.value}; cm.onclick=()=>text.focus();
       document.addEventListener('click',async e=>{
-        const link=e.target.closest('a.inline_edit_sql');if(!link)return;e.preventDefault();
+        const link=e.target.closest('a.inline_edit_sql');if(!link)return;e.preventDefault();if(window.AJAX?.active)return;
         const query=link.closest('.tools').previousElementSibling.querySelector('pre').textContent;
         await window.__fixtureQueryEdit(query);
         text.value=query;cm.hidden=false;document.querySelector('#sql_query_edit_save').hidden=false;text.focus();
       });
       document.querySelectorAll('td[data-field=refundable]').forEach(cell=>cell.ondblclick=()=>{
-        const value=cell.textContent.trim();cell.innerHTML='<input class="inline-value">';
-        const editor=cell.querySelector('input');editor.value=value;editor.focus();
+        const value=cell.textContent.trim();
+        const editor=document.createElement('input');editor.className=${options.manualGrid ? "'edit_box'" : "'inline-value'"};
+        ${options.manualGrid ? 'document.body.append(editor);' : "cell.innerHTML='';cell.append(editor);"}
+        editor.value=value;editor.focus();
         editor.onkeydown=async e=>{if(e.key==='Enter'){
           e.preventDefault();
-          const response=await fetch('/pma/fixture-save', {method:'POST',body:JSON.stringify({key:cell.closest('tr').dataset.key,value:editor.value})});
+          const payload=${options.manualGrid ? `new URLSearchParams({db:${JSON.stringify(database)},table:'subscriber_deposit',submit_type:'save',clause_is_unique:'1','where_clause[]':'subscriber_deposit.deposit_id='+cell.closest('tr').dataset.key,'fields_name[multi_edit][0][]':'refundable','fields[multi_edit][0][]':editor.value})` : "JSON.stringify({key:cell.closest('tr').dataset.key,value:editor.value})"};
+          const response=await fetch(${options.manualGrid ? "'/pma/tbl_replace.php'" : "'/pma/fixture-save'"}, {method:'POST',body:payload});
           if(response.ok){
+            const savedValue=editor.value;
             cell.innerHTML='<span>'+editor.value+'</span>';
+            ${options.manualGrid ? 'editor.remove();' : ''}
             // phpMyAdmin 4.4 appends UPDATE SQL and its tools to the SAME
             // result_query that still contains the original SELECT and tools.
             const result=document.querySelector('.result_query');
             result.querySelectorAll('[data-saved-query]').forEach(el=>el.remove());
             const sql=document.createElement('div');sql.className='sqlOuter';sql.dataset.savedQuery='';
             const pre=document.createElement('pre');
-            pre.textContent='UPDATE subscriber_deposit SET refundable = '+editor.value+' WHERE deposit_id = '+cell.closest('tr').dataset.key;
+            pre.textContent='UPDATE subscriber_deposit SET refundable = '+savedValue+' WHERE deposit_id = '+cell.closest('tr').dataset.key;
             sql.append(pre);
             const tools=document.createElement('div');tools.className='tools';tools.dataset.savedQuery='';
             tools.innerHTML='<a href="#" class="inline_edit_sql">Edit inline</a>';
@@ -106,26 +115,30 @@ export async function createDemoDatabase(browser, state, tenant, config, options
     }
     if (url.pathname.endsWith('/index.php') && request.method() === 'POST') signedIn = true;
     if (!signedIn) return route.fulfill({ contentType: 'text/html', body: loginHtml });
-    if (url.pathname.endsWith('/fixture-save')) {
-      const { key, value } = JSON.parse(request.postData());
+    if (url.pathname.endsWith('/fixture-save') || url.pathname.endsWith('/tbl_replace.php')) {
+      const body = new URLSearchParams(request.postData() || '');
+      if (options.manualGrid && !approvedDepositSave(url, request.method(), body, armed, origin)) return route.abort();
+      const { key, value } = options.manualGrid ? { key: armed.key, value: body.get('fields[multi_edit][0][]') } : JSON.parse(request.postData());
+      armed = null;
       state.events.push({ action: 'save', tenant, key, value });
       const row = state.deposits.find(row => row.key === key);
       if (!options.doNotPersist && options.failKey !== key) row.refundable = Number(value);
       if (options.saveResponseLost) return route.abort();
-      return route.fulfill({ contentType: 'application/json', body: '{}' });
+      return route.fulfill({ contentType: 'application/json', body: '{"success":true}' });
     }
     if (url.pathname.endsWith('/sql.php') && request.method() === 'POST') {
       currentQuery = new URLSearchParams(request.postData()).get('sql_query');
       const literal = currentQuery.match(/WHERE BINARY s\.username = X'([0-9a-f]+)'/);
       const username = literal ? Buffer.from(literal[1], 'hex').toString('utf8') : '';
       state.events.push({ action: 'lookup', tenant, username });
-      selected = state.deposits.filter(row => row.username === username);
+      const ids = currentQuery.match(/deposit_id IN \(([^)]+)\)/)?.[1].split(/,\s*/);
+      selected = state.deposits.filter(row => ids ? ids.includes(row.key) : row.username === username);
       if (options.onLookup) options.onLookup(state, username);
     }
     return route.fulfill({ contentType: 'text/html', body: html() });
   });
   const page = await context.newPage();
-  const adapter = new PhpMyAdmin(page, { origin, rowKeyColumn: 'deposit_id', resultTableSelector: 'table.sql-results', inlineEditorSelector: 'input.inline-value', timeoutMs: config.timeoutMs, maxDepositsPerUser: config.maxDepositsPerUser });
+  const adapter = new PhpMyAdmin(page, { origin, database, rowKeyColumn: 'deposit_id', resultTableSelector: 'table.sql-results', inlineEditorSelector: options.manualGrid ? 'input.edit_box' : 'input.inline-value', timeoutMs: config.timeoutMs, maxDepositsPerUser: config.maxDepositsPerUser, liveWrites: options.manualGrid === true, armSave: scope => { armed = scope; } });
   try {
     await page.goto(origin + '/pma/index.php');
     await adapter.login('demo-account', 'demo-password');

@@ -43,9 +43,11 @@ function webInput(taskId, input) {
     return input;
   }
   if (taskId === 'deposit-refundability') {
-    if (input.environment !== 'offline-demo' || input.demo !== true) throw new StopError('WRONG_ENVIRONMENT', 'The dashboard supports offline deposit demonstration only.');
+    const demo = input.environment === 'offline-demo' && input.demo === true && input.manual !== true;
+    const manual = input.environment === 'production-manual' && input.manual === true && input.demo !== true && ['north', 'south'].includes(input.tenant);
+    if (!demo && !manual) throw new StopError('WRONG_ENVIRONMENT', 'Choose an offline demo or manual live deposit execution with an explicit tenant.');
     if (!Array.isArray(input.usernames) || input.usernames.some(username => typeof username !== 'string') || (input.tenant != null && !['north', 'south'].includes(input.tenant))) throw new StopError('INPUT', 'Invalid deposit worker input.');
-    if (Object.keys(input).some(key => !['usernames', 'tenant', 'refundable', 'apply', 'environment', 'demo'].includes(key))) throw new StopError('INPUT', 'Unsupported deposit worker input.');
+    if (Object.keys(input).some(key => !['usernames', 'tenant', 'refundable', 'apply', 'environment', 'demo', 'manual'].includes(key))) throw new StopError('INPUT', 'Unsupported deposit worker input.');
     return input;
   }
   if (taskId === 'workforce-access') {
@@ -67,7 +69,7 @@ async function start(message) {
     if (typeof message.settings?.screenshots === 'boolean') settings.screenshots = message.settings.screenshots;
     if (typeof message.settings?.demoHeadless === 'boolean') settings.demoHeadless = message.settings.demoHeadless;
     const result = await runTask(message.taskId, input, {
-      root, outputDir, ask, lockHeld: true, settings,
+      root, outputDir, ask, lockHeld: true, settings, approvedDeposits: message.approvedDeposits,
       onEvent: event => send({ type: 'event', event: event.type === 'checkpoint' ? { type: 'checkpoint' } : {
         type: 'stage', stage: redact(event.stage).slice(0, 80), message: redact(event.message).slice(0, 1000),
         ...(event.currentRecord ? { currentRecord: redact(event.currentRecord).slice(0, 200) } : {})

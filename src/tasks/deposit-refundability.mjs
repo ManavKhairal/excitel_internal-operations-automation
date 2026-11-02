@@ -5,6 +5,7 @@ export const TENANTS = Object.freeze({
   north: 'https://del-procare-mariadb.excitel.in',
   south: 'https://hyd-procare-mariadb.excitel.in'
 });
+export const TENANT_DATABASES = Object.freeze({ north: 'excitel_ticketing_system', south: 'excitel_ticketing_system_hyd' });
 const aliases = { north: 'north', del: 'north', delhi: 'north', south: 'south', hyd: 'south', hyderabad: 'south' };
 export function normalizeTenant(value) {
   const key = clean(value).toLowerCase();
@@ -16,7 +17,8 @@ export function validateInput(input, maxUsers = 20) {
   if (!Array.isArray(input.usernames) || !input.usernames.length || input.usernames.length > maxUsers) {
     throw new StopError('INPUT', `Provide 1–${maxUsers} usernames.`);
   }
-  return { usernames: [...new Set(input.usernames.map(validUsername))], tenant: input.tenant ? normalizeTenant(input.tenant) : null, apply: input.apply === true, refundable: normalizeRefundable(input.refundable) };
+  if (input.manual === true && !input.tenant) throw new StopError('TENANT_REQUIRED', 'Select North or South for manual deposit input. Google Sheets tenant detection is not used.');
+  return { usernames: [...new Set(input.usernames.map(validUsername))], tenant: input.tenant ? normalizeTenant(input.tenant) : null, apply: input.apply === true, refundable: normalizeRefundable(input.refundable), ...(input.manual === true ? { manual: true } : {}) };
 }
 export function normalizeRefundable(value = 1) {
   if (![0, 1, '0', '1'].includes(value)) throw new StopError('INVALID_REFUNDABLE', 'Refundable must be exactly 0 or 1.');
@@ -57,18 +59,20 @@ const classification = (row, target, status) => row.isCovered || row.isBundled ?
 const errorInfo = error => ({ code: error.code || 'FAILED', message: error.message.split('\n')[0] });
 
 // Business workflow independent of CLI, browser implementation, and credentials.
-export async function runDepositTask(input, { sheets, openDatabase, config, checkpoint = async () => {}, now = () => new Date().toISOString(), environment = 'production-preview' }) {
+export async function runDepositTask(input, { sheets, openDatabase, config, approvedDeposits, checkpoint = async () => {}, now = () => new Date().toISOString(), environment = 'production-preview' }) {
   const request = validateInput(input, config.maxUsers);
   const target = request.refundable, status = outcomes(target);
-  if (request.apply && environment !== 'offline-demo') throw new StopError('LIVE_WRITES_DISABLED', 'Production writes are not enabled in this development phase.');
+  const manual = request.manual === true && environment === 'production-manual';
+  if (request.manual === true && !manual) throw new StopError('WRONG_ENVIRONMENT', 'Manual deposit input requires the live manual environment.');
+  if (request.apply && environment !== 'offline-demo' && !manual) throw new StopError('LIVE_WRITES_DISABLED', 'Live writes require explicit manual input and tenant selection.');
   const report = { schemaVersion: 1, task: 'deposit-refundability', executionId: randomUUID(), environment,
-    mode: request.apply ? 'apply' : 'dry-run', targetRefundable: target, status: 'IN_PROGRESS', startedAt: now(), finishedAt: null,
-    results: request.usernames.map(username => ({ username, tenant: null, targetRefundable: target, outcome: 'NOT_PROCESSED', rows: [], sheet: { status: 'NOT_REQUIRED' } })) };
+    mode: request.apply ? 'apply' : 'dry-run', targetRefundable: target, inputSource: manual ? 'manual' : 'sheets', status: 'IN_PROGRESS', startedAt: now(), finishedAt: null,
+    results: request.usernames.map(username => ({ username, tenant: null, targetRefundable: target, outcome: 'NOT_PROCESSED', rows: [], sheet: { status: manual ? 'NOT_REQUESTED_MANUAL' : 'NOT_REQUIRED' } })) };
   const persist = () => checkpoint(structuredClone(report));
   await persist();
   // Check BOTH source sheets for ALL inputs before opening a database.
   for (const result of report.results) {
-    try { result.tenant = resolveTenant(result.username, await sheets.membership(result.username), request.tenant); result.outcome = 'VALIDATED'; }
+    try { result.tenant = manual ? request.tenant : resolveTenant(result.username, await sheets.membership(result.username), request.tenant); result.outcome = 'VALIDATED'; }
     catch (error) { result.outcome = 'BLOCKED'; result.error = errorInfo(error); }
     await persist();
   }
@@ -81,6 +85,14 @@ export async function runDepositTask(input, { sheets, openDatabase, config, chec
         const entry = sessions.get(result.tenant);
         database = entry.database; entry.results.push(result);
         const initial = validateRows(await database.lookup(result.username), result.username, config.maxDepositsPerUser);
+        if (manual && request.apply && approvedDeposits) {
+          const approved = approvedDeposits.find(user => user.username === result.username && user.tenant === result.tenant);
+          const expected = approved && validateRows(approved.rows, result.username, config.maxDepositsPerUser);
+          if (!expected || expected.length !== initial.length || initial.some(row => {
+            const previous = expected.find(candidate => candidate.key === row.key);
+            return !previous || ['subscriberId', 'isCovered', 'isBundled', 'refundable'].some(field => previous[field] !== row[field]);
+          })) throw new StopError('PREVIEW_CHANGED', 'Deposit records or values changed since the approved preview. Run a fresh preview before applying.');
+        }
         result.rows = initial.map(row => ({ ...row, before: row.refundable, after: row.refundable, saveAttempted: false, outcome: classification(row, target, status) }));
         await persist();
         for (const row of result.rows) {
@@ -100,12 +112,12 @@ export async function runDepositTask(input, { sheets, openDatabase, config, chec
         }
         result.outcome = request.apply ? 'COMPLETED' : 'PREVIEW_COMPLETED';
         const changed = result.rows.filter(row => row.outcome === status.verified);
-        if (changed.length) result.sheet = { status: 'PENDING', date: taskDate(changed.at(-1).verifiedAt, config.timeZone), refundable: target === 1 ? 'YES' : 'NO' };
+        if (changed.length && !manual) result.sheet = { status: 'PENDING', date: taskDate(changed.at(-1).verifiedAt, config.timeZone), refundable: target === 1 ? 'YES' : 'NO' };
       } catch (error) {
         const pending = result.rows.find(row => row.outcome === 'SAVE_STARTED_UNVERIFIED');
         if (pending) pending.outcome = 'SAVE_UNVERIFIED';
         result.error = errorInfo(error); result.outcome = 'HALTED_FOR_REVIEW';
-        if (result.rows.some(row => row.outcome === status.verified)) result.sheet = { status: 'BLOCKED_PARTIAL_RESULT' };
+        if (!manual && result.rows.some(row => row.outcome === status.verified)) result.sheet = { status: 'BLOCKED_PARTIAL_RESULT' };
       }
       await persist();
       if (result.outcome === 'HALTED_FOR_REVIEW') break;

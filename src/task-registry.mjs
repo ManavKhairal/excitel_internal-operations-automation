@@ -22,18 +22,18 @@ export const taskCatalog = Object.freeze([
   },
   {
     id: 'deposit-refundability', name: 'Deposit refundability',
-    description: 'Validate tenant membership and individual deposit eligibility, then preview or simulate a verified refundable change.',
-    applications: ['Google Sheets (simulated)', 'phpMyAdmin (simulated)'], environments: ['offline-demo'], modes: ['preview', 'apply'],
-    availability: 'Offline demo with synthetic records only. Live preview and production writes are disabled.',
+    description: 'Paste exact usernames to preview and change eligible security deposits in the selected tenant, without Google Sheets.',
+    applications: ['phpMyAdmin'], environments: ['production-manual', 'offline-demo'], modes: ['preview', 'apply'],
+    availability: 'Live manual input changes real deposits after preview and confirmation. Google Sheets is skipped. Offline demo uses synthetic records.',
     inputs: [
       { name: 'usernames', label: 'Usernames', type: 'textarea', required: true, maxLength: 2600,
-        placeholder: 'demo.north\ndemo.south', help: 'One username per line, up to 20. Synthetic demo users: demo.north and demo.south.' },
+        placeholder: 'One exact username per line', help: 'Up to 20 usernames, one per line. Use a separate live run for each tenant. Offline demo users: demo.north and demo.south.' },
       { name: 'tenant', label: 'Tenant', type: 'select', required: false, defaultValue: '',
-        options: [{ value: '', label: 'Detect from both tenant sheets' }, { value: 'north', label: 'North' }, { value: 'south', label: 'South' }],
-        help: 'An explicitly selected tenant must match the source sheets.' },
+        options: [{ value: '', label: 'Select tenant (demo can detect from fixture sheets)' }, { value: 'north', label: 'North / Delhi' }, { value: 'south', label: 'South / Hyderabad' }],
+        help: 'Required for live manual input. Choose the tenant that owns these users; Google Sheets is not consulted.' },
       { name: 'refundable', label: 'Target refundable value', type: 'select', required: true, defaultValue: '1',
         options: [{ value: '1', label: '1 — Refundable' }, { value: '0', label: '0 — Non-refundable' }],
-        help: 'Only eligible uncovered, unbundled deposits are changed in the simulation.' }
+        help: 'Only uncovered, unbundled deposits are changed. Deposits already at the target are skipped.' }
     ]
   },
   {

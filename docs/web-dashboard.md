@@ -1,6 +1,6 @@
 # Local automation dashboard
 
-The dashboard is a local, authenticated interface to this repository's automation engine. ERP and Workforce operations remain staging-only. Deposit refundability remains an **offline demo**, including both refundable targets (`0` and `1`). No production access, Zendesk, AI, or global Joget step is added.
+The dashboard is a local, authenticated interface to this repository's automation engine. ERP and Workforce operations remain staging-only. Deposit refundability supports **live manual input without Google Sheets**, with refundable targets `0` and `1`, and a separate offline demo. No Zendesk, AI, or global Joget step is added.
 
 ## Install and start
 
@@ -27,10 +27,14 @@ No frontend build, database service, npm dev server, or cloud deployment is requ
 ## Operating a task
 
 1. Open **Automations**, select a task, and fill its schema-driven form.
-2. Run a preview. ERP recollects the exact partner and reads current CoreHR statuses. Deposit demo uses synthetic browser pages and an in-memory sheet.
+2. Run a preview. ERP recollects the exact partner and reads current CoreHR statuses. Manual live deposits query the selected tenant for exactly the supplied usernames, without reading Google Sheets. Deposit demo uses synthetic browser pages and an in-memory sheet.
 3. Open the execution detail, inspect record outcomes, errors, and cleanup. Download reports as needed.
 4. For a successful preview, choose apply and confirm the displayed task, environment, and inputs. Preview approval expires after one hour and can be used only once. A failed/partial preview cannot authorize apply. CLI historical runs cannot authorize dashboard apply.
 5. Monitor the new execution. Apply runs the workflow afresh and rechecks current identities, statuses, and eligible records; preview is not a guarantee of apply success.
+
+For real deposit changes, choose **Deposit refundability → Live deposits — manual input**, paste one exact username per line, select **North / Delhi** or **South / Hyderabad**, then choose **1 — Refundable** or **0 — Non-refundable**. Choose **Run preview**, review all rows, then **Review & apply → Confirm live deposit apply** and check the acknowledgement. Use a separate run for each tenant. Existing sheet membership is not required, and completion is recorded only in local JSON/CSV reports (`NOT_REQUESTED_MANUAL`). If deposit identities, values or flags change after preview, apply stops with `PREVIEW_CHANGED`; run a new preview.
+
+Set `PMA_NORTH_USERNAME`/`PMA_NORTH_PASSWORD` and/or `PMA_SOUTH_USERNAME`/`PMA_SOUTH_PASSWORD` in `.env`. Without these, the dashboard opens the selected database and prompts you to log in there. Live deposit sessions always open visibly and verify logout. Restart the server after upgrading this code, then sign in and reload the page.
 
 Deposit demo data starts fresh for every execution. It is useful for testing the entire interface without company credentials. Try `demo.north` or `demo.south`; these records never reach a real database or Google Sheet. **Settings → Headless demo browser** makes this demo usable without a display. ERP and Workforce keep visible browsers because SSO/MFA can require an operator.
 
