@@ -85,6 +85,12 @@ test('live read requests support blank asset context and AJAX navigation while r
   const allowed = (pathname, method = 'GET', fields = {}) => approvedDepositRead(new URL(origin + pathname), method, new URLSearchParams(fields), queries, origin);
   assert.equal(allowed('/pma/js/whitelist.php?db=&table=&server=1'), true);
   assert.equal(allowed('/pma/db_structure.php?db=excitel_ticketing_system&token=test&ajax_request=true&ajax_page_request=true', 'POST', { _nocache: '123' }), true);
+  const autocomplete = { ajax_request: 'true', token: 'test', server: '1', db: 'excitel_ticketing_system', _nocache: '123' };
+  assert.equal(allowed('/pma/db_sql_autocomplete.php', 'POST', autocomplete), true);
+  assert.equal(allowed('/pma/db_sql_autocomplete.php', 'GET', autocomplete), false);
+  assert.equal(allowed('/pma/db_sql_autocomplete.php', 'POST', { ...autocomplete, db: 'other_database' }), false);
+  assert.equal(allowed('/pma/db_sql_autocomplete.php', 'POST', { ...autocomplete, sql_query: 'UPDATE subscriber_deposit SET refundable=1' }), false);
+  assert.equal(allowed('/pma/db_sql_autocomplete.php', 'POST', { ...autocomplete, 'fields[multi_edit][0][]': '1' }), false);
   assert.equal(allowed('/pma/index.php', 'POST', { pma_username: 'fixture-account', pma_password: 'fixture-password' }), true);
   assert.equal(allowed('/pma/sql.php', 'POST', { sql_query: 'SELECT * FROM `subscriber_deposit`;' }), true);
   assert.equal(allowed('/pma/import.php', 'POST', { sql_query: 'SELECT * FROM `subscriber_deposit`' }), true);

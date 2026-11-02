@@ -235,7 +235,13 @@ export function approvedDepositRead(url, method, body, queries, origin) {
   // Permit only navigation metadata, never arbitrary form operations.
   const navigationFields = new Set(['db', 'table', 'server', 'token', 'ajax_request', 'ajax_page_request', '_nocache']);
   const navigation = method === 'POST' && ['index.php', 'db_structure.php', 'tbl_structure.php', 'sql.php', 'navigation.php'].includes(endpoint) && !sql.length && parameters.every(key => navigationFields.has(key));
-  return read || login || select || navigation;
+  // CodeMirror fetches table/column names when its SQL editor first opens.
+  // This endpoint receives only database context and AJAX metadata.
+  const autocompleteFields = new Set(['ajax_request', 'token', 'server', 'db', '_nocache']);
+  const autocomplete = method === 'POST' && url.pathname === '/pma/db_sql_autocomplete.php' && !sql.length &&
+    parameters.every(key => autocompleteFields.has(key)) &&
+    [...url.searchParams.getAll('db'), ...body.getAll('db')].some(value => value === databaseForOrigin(origin));
+  return read || login || select || navigation || autocomplete;
 }
 
 export function assertPreviewConfigured(config) {
