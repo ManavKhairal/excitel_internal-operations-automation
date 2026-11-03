@@ -1,10 +1,10 @@
 # Procare subscriber synchronization
 
-Branch: `feature/procare-subscriber-synchronization`. This is a separate task for North production Procare, using the username list selected from a Google Sheet. Existing ERP, deposit and Workforce tasks keep their own configuration and credentials.
+This is a separate task for North production Procare, using a reviewed username list. ERP, deposit and Workforce tasks keep their own configuration and credentials.
 
 ## Current validation
 
-The production sign-in page and public application bundle were inspected without signing in or synchronizing any subscriber. They confirm the production Auth0 origin, subscriber search/profile routes, detail username selector, and the synchronization endpoint. The UI workflow and request guard are covered by isolated browser fixtures. Authenticated production preview and the real synchronization response still require validation with the supplied sheet and credentials. `liveUiReviewed` therefore remains false in the checked-in configuration; apply stops before browser creation until that review is completed.
+The production sign-in page and application routes were reviewed, and prior authenticated runs produced verified synchronization responses. The checked-in configuration sets `liveUiReviewed` to `true`, so `--apply` can send production synchronization requests. Preview each new batch, confirm its source and exact usernames, and inspect the prior report before restarting an interrupted run. An offline test suite also covers the UI workflow and request guard. Branch cleanup did not execute the live task.
 
 ## Credentials
 
@@ -19,7 +19,9 @@ The task reads only these fields. It does not use staging Procare credentials as
 
 ## Sheet input
 
-Provide the Google Sheet link, exact tab, username column, and selected rows or selection rule. The connected Google Sheets tools can read that bounded selection into a private `.state/procare-sync-users.json` snapshot. The Node.js process does not inherit Google authentication from the chat connector. This first version consumes the reviewed snapshot; it does not autonomously refresh Google Sheets or write completion markers to it.
+For a Google Sheet, provide its link, exact tab, username column, and selected rows or selection rule. The connected Google Sheets tools can read that bounded selection into a private `.state/procare-sync-users.json` snapshot. The Node.js process does not inherit Google authentication from the chat connector. JSON input does not autonomously refresh the sheet or write completion markers to it.
+
+For a local Excel workbook, use `--workbook /path/to/users.xlsx`. The workbook must contain exactly one worksheet with exact `Username` and `Status` headers. Usernames must be stored as text to preserve leading zeroes. Preview does not edit the workbook. Apply creates a private backup before processing and updates only the matching `Status` cells. Keep the workbook closed during apply; an external edit stops the run rather than being overwritten. Completed `SYNCHRONIZED` and `USER_NOT_FOUND` rows are skipped. Uncertain earlier attempts require report review before their status cells are cleared and retried.
 
 Snapshot format (example data only):
 
@@ -46,11 +48,19 @@ Visible-browser preview:
 npm start -- --task procare-subscriber-synchronization --input-file .state/procare-sync-users.json
 ```
 
+Or preview a local workbook, optionally limiting the first batch:
+
+```bash
+npm start -- --task procare-subscriber-synchronization --workbook /path/to/users.xlsx --limit 10
+```
+
 After authenticated UI review, execute the approved batch:
 
 ```bash
 npm start -- --task procare-subscriber-synchronization --input-file .state/procare-sync-users.json --apply
 ```
+
+For a reviewed workbook batch, use the same `--workbook` path and optional `--limit` with `--apply`.
 
 Preview searches and opens profiles without synchronization. The browser remains visible by default. The task shares the existing local execution lock.
 
@@ -70,4 +80,4 @@ Preview searches and opens profiles without synchronization. The browser remains
 
 `output/<timestamp>-procare-sync-<first-user>/` contains a report and verification screenshots. Reports include sheet source, input hash, per-user identities, attempt and dispatch checkpoints, response verification, blocked requests and logout results.
 
-An interrupted run may already have sent Synchronize even if the report is incomplete. Review `SYNC_STARTED_UNVERIFIED`, `SYNC_UNVERIFIED` and the request audit before starting another run. This version does not automatically resume or replay prior attempts. No Google Sheet or subscriber synchronization is performed by the fixture tests.
+An interrupted run may already have sent Synchronize even if the report is incomplete. Review `SYNC_STARTED_UNVERIFIED`, `SYNC_UNVERIFIED` and the request audit before starting another run. The workbook records these uncertain states; it does not automatically resume or replay prior attempts. The fixture tests use temporary workbooks and perform no live Google Sheet or subscriber synchronization.

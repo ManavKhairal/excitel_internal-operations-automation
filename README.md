@@ -19,10 +19,15 @@ One Node.js + Playwright project with independently selected tasks:
 | ERP employee deactivation | `npm start -- --partner "PARTNER"` or add `--task erp-deactivation` | Existing staging workflow; `--apply` enables staging saves. |
 | Deposit refundability | `npm start -- --task deposit-refundability --manual --tenant north --username USERNAME` | Live preview; `--apply` saves and verifies eligible deposits without Sheets. `--demo` remains available. |
 | Workforce Sales group access | `npm start -- --task workforce-access --username USERNAME --tenant both --action grant` | Grant/remove with `--action`; preview by default, `--apply` saves and verifies. |
+| Procare subscriber synchronization | `npm start -- --task procare-subscriber-synchronization --workbook /path/to/users.xlsx` | North production; preview by default, `--apply` after review. |
 
 For deposits, select **Live deposits — manual input**, paste up to 20 exact usernames (one per line), choose **North / Delhi** or **South / Hyderabad**, and select the refundable target (**1** or **0**). Run preview, review the report, then confirm the live apply. This mode skips all Google Sheets reads and writes, verifies each saved deposit, logs out and saves local reports. See [deposit setup and rules](docs/deposit-refundability.md). No additional dependencies are required.
 
 The [Workforce task](docs/workforce-access.md) uses independent `WORKFORCE_USERNAME` / `WORKFORCE_PASSWORD` credentials. It grants or removes membership in the first Sales User Group in North, South or both tenants, preserves other members/settings, skips already-correct membership, verifies saved results and signs out. Use `--action grant` (the default) or explicit `--action remove`, with `--apply` for saves. Missing users are reported per tenant while processing continues in the other tenant.
+
+The [Procare subscriber synchronization task](docs/procare-subscriber-synchronization.md) reads exact North usernames from a reviewed sheet snapshot or Excel workbook. It uses separate production credentials, previews by default, and requires `--apply` to synchronize.
+
+For branch creation, merging, and rollbacks, see [branching and recovery](docs/branching.md).
 
 ## ERP employee deactivation
 

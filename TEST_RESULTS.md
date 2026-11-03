@@ -1,4 +1,10 @@
-# Current validation: manual live deposits without Google Sheets (2026-10-31)
+# Current validation: GitHub `main` merged into the dashboard branch (2026-11-03)
+
+`origin/feature/deposit-refundability`, `origin/feature/procare-subscriber-synchronization` and `origin/main` were merged into the dashboard/Workforce line. The local deposit, Workforce, dispatcher and dashboard code already contained the bidirectional deposit logic, so conflicts kept the local superset. New from GitHub: the Procare subscriber synchronization task (CLI only; not yet in the dashboard catalog), its workbook docs, `docs/branching.md` and CLI help entries.
+
+`npm run check` and `git diff --check` passed. The full offline `npm test` suite passed **182 tests, 0 failures** (the previous 163 plus 19 Procare/workbook tests). `--help` was checked for all four tasks through the dispatcher. No live automation was run.
+
+# Previous validation: manual live deposits without Google Sheets (2026-10-31)
 
 Manual usernames are wired through the dashboard, HTTP validation, worker and shared task runner. Both target values, exact tenant/database binding, preview approval, row-change detection, external grid editing, one-save payload validation, persisted readback and skipped Sheets recording are covered by offline fixtures.
 
@@ -7,6 +13,10 @@ Manual usernames are wired through the dashboard, HTTP validation, worker and sh
 Live **read-only** readiness passed for North and South: login, expected deposit columns, an exact synthetic-username SELECT and verified logout. These checks performed **zero deposit saves and zero Sheets requests**. They established South’s `excitel_ticketing_system_hyd` database, required AJAX navigation handling, background preference checks and the separate generic SQL acknowledgement. Save behavior remains validated with offline fixtures rather than unrequested real-user changes.
 
 The local dashboard was started with the updated task registry. An authenticated browser check verified the live manual environment, required tenant selection, empty usernames field and no page errors. Evidence: [live form](output/web-test-evidence/deposit-manual-live-form.png) and [two-user fixture result](output/web-test-evidence/deposit-manual-result-desktop.png).
+
+# Previous validation: isolated-branch integration on `main` (2026-10-31)
+
+The shared dispatcher and the isolated Deposit, Workforce, and Procare branches were checked separately. Their offline suites passed 47/47, 92/92, 77/77, and 66/66 tests, respectively. After combining them, `npm run check` passed and the full offline `npm test` suite passed **141/141**. No live automation was run during branch integration.
 
 # Previous validation: Workforce access in the web dashboard (2026-10-31)
 
