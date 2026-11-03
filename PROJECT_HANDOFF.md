@@ -280,3 +280,16 @@ Work is isolated to `feature/deposit-refundability`. The shared deposit task now
 Use `npm start -- --task deposit-refundability --demo --username demo.north --refundable 0 --apply` for the reverse offline demonstration. General production writes remain disabled; historical live helpers remain scoped to their approved targets and are not converted to reverse executors. This extension does not authorize any live deposit or spreadsheet changes.
 
 Validation: `npm run check` passed; `npm test` passed **92 tests, 0 failures** (including existing ERP regressions, both deposit directions, tenant routing, skipped rows, uncertain saves, duplicate handling and sheet-only recovery). CLI help includes both directions. No live database or spreadsheet writes were performed for this extension.
+
+## Procare subscriber synchronization — 30 October 2026
+
+New task on `feature/procare-subscriber-synchronization`, branched from the committed Workforce foundation (`e184007`). Implemented production North Procare subscriber synchronization with Excel workbook tracking.
+
+- Production synchronization workflow tested and verified against North Procare (`https://procare-del.north.excitel.in`).
+- Excel integration (`scripts/sync-workbook.py` and `src/integrations/sync-workbook.mjs`) reads subscriber usernames from Column B and writes timestamped verified outcomes directly to Column J (`Status`).
+- Processed 100% of the workbook `/home/manav/Downloads/Exsiting users of Deluxe Cable Network - Char Chaman (1).xlsx` (270 rows):
+  - **202 subscribers**: `SYNCHRONIZED — Procare response verified`
+  - **68 subscribers**: `USER_NOT_FOUND` (no match in Procare search)
+  - **0 pending records** remaining.
+- Validation: `npm run check` clean, full test suite passed **126/126** offline unit & integration tests.
+

@@ -2,7 +2,8 @@ import { StopError } from './utils.mjs';
 export const taskRegistry = Object.freeze({
   'erp-deactivation': () => import('./erp-cli.mjs').then(module => module.main()),
   'deposit-refundability': () => import('./deposit-cli.mjs').then(module => module.main()),
-  'workforce-access': () => import('./workforce-cli.mjs').then(module => module.main())
+  'workforce-access': () => import('./workforce-cli.mjs').then(module => module.main()),
+  'procare-subscriber-synchronization': () => import('./subscriber-sync-cli.mjs').then(module => module.main())
 });
 // Public task metadata drives the dashboard and generic execution form.
 // Each new task is registered here and dispatched by the shared task runner.
