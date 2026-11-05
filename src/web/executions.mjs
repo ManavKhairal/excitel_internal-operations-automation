@@ -107,7 +107,7 @@ export class ExecutionManager {
     const report = await readJson(execution.directory, 'report.json');
     return { id: execution.id, taskId: execution.taskId, taskName: taskName(execution.taskId), environment: execution.environment, mode: execution.mode,
       status: execution.status, createdAt: execution.createdAt, startedAt: execution.startedAt, finishedAt: execution.finishedAt, stage: redact(execution.stage),
-      input: execution.input, progress: progressOf(report), error: execution.error ? safeError(execution.error) : null, source: execution.source };
+      input: execution.input, progress: progressOf(report), error: execution.error ? safeError(execution.error) : null, source: execution.source, direct: execution.direct === true };
   }
   async list(filters = {}) {
     await this.scan();
@@ -151,14 +151,14 @@ export class ExecutionManager {
     const request = validateRequest(body, this.maxUsers);
     await this.scan();
     const keyHash = hash(request.idempotencyKey);
-    const requestHash = hash({ taskId: request.taskId, input: request.input, mode: request.mode, environment: request.environment, previewId: request.previewId });
+    const requestHash = hash({ taskId: request.taskId, input: request.input, mode: request.mode, environment: request.environment, previewId: request.previewId, direct: request.direct });
     const previous = [...this.executions.values()].find(execution => execution.keyHash === keyHash);
     if (previous) {
       if (previous.requestHash !== requestHash) throw new HttpError(409, 'REQUEST_KEY_REUSED', 'This request key was already used for different inputs.');
       return { execution: await this.detail(previous.id), replay: true };
     }
     if (this.activeId) throw new HttpError(409, 'LOCKED', 'An execution is already active. Wait for its report before starting another.');
-    if (request.mode === 'apply') {
+    if (request.mode === 'apply' && !request.direct) {
       const preview = await this.find(request.previewId);
       if (!this.eligiblePreview(preview) || preview.taskId !== request.taskId || preview.environment !== request.environment || hash(preview.input) !== hash(request.input)) {
         throw new HttpError(409, 'PREVIEW_REQUIRED', 'Use a successful, unused preview with exactly these inputs from the last hour. Apply rechecks current application state.');
@@ -169,12 +169,12 @@ export class ExecutionManager {
     catch (error) { if (error.code === 'LOCKED') throw new HttpError(409, 'LOCKED', error.message); throw error; }
     const id = crypto.randomUUID();
     const execution = { id, taskId: request.taskId, taskName: request.task.name, environment: request.environment, mode: request.mode, input: request.input,
-      keyHash, requestHash, previewId: request.previewId, source: 'web', status: 'queued', stage: 'Queued', createdAt: now(), startedAt: null, finishedAt: null,
+      keyHash, requestHash, previewId: request.previewId, ...(request.direct ? { direct: true } : {}), source: 'web', status: 'queued', stage: 'Queued', createdAt: now(), startedAt: null, finishedAt: null,
       error: null, events: [], prompt: null, directory: path.join(this.outputDir, `${timestamp()}-web-${id}`) };
     try {
       await privateDir(execution.directory);
       await this.persist(execution);
-      await this.audit(request.mode === 'apply' ? 'execution.apply_confirmed' : 'execution.preview_created', { executionId: id, taskId: request.taskId, environment: request.environment, previewId: request.previewId });
+      await this.audit(request.direct ? 'execution.direct_apply_confirmed' : request.mode === 'apply' ? 'execution.apply_confirmed' : 'execution.preview_created', { executionId: id, taskId: request.taskId, environment: request.environment, previewId: request.previewId });
       this.executions.set(id, execution); this.activeId = id;
     } catch (error) { await releaseLock(); throw error; }
     this.activePromise = this.run(execution, releaseLock).catch(async error => {

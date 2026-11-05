@@ -7,7 +7,7 @@ import { HttpError, onlyKeys, assertObject } from './security.mjs';
 export const PROCARE_DASHBOARD_MAX_USERS = 100;
 
 export function validateRequest(body, maxUsers = 20) {
-  onlyKeys(body, ['taskId', 'environment', 'mode', 'input', 'idempotencyKey', 'previewId', 'confirmed']);
+  onlyKeys(body, ['taskId', 'environment', 'mode', 'input', 'idempotencyKey', 'previewId', 'confirmed', 'direct']);
   const task = taskCatalog.find(task => task.id === body.taskId);
   if (!task) throw new HttpError(400, 'UNKNOWN_TASK', 'Select an available automation task.');
   if (!task.environments.includes(body.environment)) throw new HttpError(400, 'ENVIRONMENT_DISABLED', 'Choose an environment supported by the selected task.');
@@ -50,7 +50,11 @@ export function validateRequest(body, maxUsers = 20) {
   } else {
     throw new HttpError(400, 'TASK_UNAVAILABLE', 'This task has not yet registered a server-side input validator.');
   }
-  if (body.mode === 'apply' && (body.confirmed !== true || typeof body.previewId !== 'string')) throw new HttpError(400, 'CONFIRMATION_REQUIRED', 'Review a successful preview and explicitly confirm its apply operation.');
+  const direct = body.direct !== undefined;
+  if (direct) {
+    if (body.direct !== true || body.mode !== 'apply' || task.directApply !== true) throw new HttpError(400, 'DIRECT_APPLY_UNAVAILABLE', 'This task requires a reviewed preview before apply.');
+    if (body.confirmed !== true || body.previewId !== undefined) throw new HttpError(400, 'CONFIRMATION_REQUIRED', 'Explicitly confirm the direct apply. A direct apply does not reference a preview.');
+  } else if (body.mode === 'apply' && (body.confirmed !== true || typeof body.previewId !== 'string')) throw new HttpError(400, 'CONFIRMATION_REQUIRED', 'Review a successful preview and explicitly confirm its apply operation.');
   if (body.mode === 'preview' && (body.confirmed !== undefined || body.previewId !== undefined)) throw new HttpError(400, 'INVALID_INPUT', 'Preview requests cannot include apply approval.');
-  return { task, taskId: task.id, environment: body.environment, mode: body.mode, input, idempotencyKey: body.idempotencyKey, previewId: body.previewId || null };
+  return { task, taskId: task.id, environment: body.environment, mode: body.mode, input, idempotencyKey: body.idempotencyKey, previewId: body.previewId || null, direct };
 }

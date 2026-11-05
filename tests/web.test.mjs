@@ -438,3 +438,32 @@ test('Procare subscriber synchronization validates dashboard input, previews wit
   const reused = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', mode: 'apply', input: { usernames: ['sync.one', '000123'] }, previewId: reviewed.id, confirmed: true }) });
   assert.equal(reused.status, 409);
 });
+
+test('direct apply skips preview only for opted-in tasks and still requires explicit confirmation', { timeout: 45000 }, async t => {
+  const browser = await testBrowser(); t.after(() => browser.close());
+  const syncEvents = [];
+  const app = await startDashboard({ execute: async (job, callbacks) => { const result = await procareSyncWebExecutor(browser, job, callbacks); syncEvents.push(...result.events); return { exitCode: result.exitCode }; } });
+  t.after(() => app.dispose());
+  const sync = { taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: ['sync.one', '000123'] } };
+  for (const [body, code] of [
+    [{ ...sync, mode: 'apply', direct: true }, 'CONFIRMATION_REQUIRED'],
+    [{ ...sync, mode: 'apply', direct: true, confirmed: true, previewId: 'any-preview' }, 'CONFIRMATION_REQUIRED'],
+    [{ ...sync, mode: 'preview', direct: true }, 'DIRECT_APPLY_UNAVAILABLE'],
+    [{ ...sync, mode: 'apply', direct: 'yes', confirmed: true }, 'DIRECT_APPLY_UNAVAILABLE'],
+    [{ taskId: 'workforce-access', environment: 'staging', mode: 'apply', direct: true, confirmed: true, input: { usernames: ['new.agent1'], tenant: 'both', action: 'grant' } }, 'DIRECT_APPLY_UNAVAILABLE'],
+    [{ taskId: 'deposit-refundability', environment: 'production-manual', mode: 'apply', direct: true, confirmed: true, input: { usernames: ['user1'], tenant: 'north', refundable: 1 } }, 'DIRECT_APPLY_UNAVAILABLE']
+  ]) {
+    const response = await app.request('/api/executions', { method: 'POST', body: requestBody(body) });
+    assert.equal(response.status, 400, response.text);
+    assert.equal(response.data.error.code, code);
+  }
+  assert.equal(syncEvents.length, 0);
+  const direct = await app.request('/api/executions', { method: 'POST', body: requestBody({ ...sync, mode: 'apply', direct: true, confirmed: true }) });
+  assert.equal(direct.status, 202, direct.text);
+  assert.equal(direct.data.execution.direct, true);
+  const done = await app.finish(direct.data.execution.id, { timeout: 15000 });
+  assert.equal(done.status, 'succeeded', JSON.stringify(done.error));
+  assert.equal(done.mode, 'apply'); assert.equal(done.canApply, false);
+  assert.deepEqual(done.records.map(row => row.outcome), ['SYNC_RESPONSE_VERIFIED', 'SYNC_RESPONSE_VERIFIED']);
+  assert.deepEqual(syncEvents.filter(event => event.action === 'synchronize').map(event => event.username), ['sync.one', '000123']);
+});

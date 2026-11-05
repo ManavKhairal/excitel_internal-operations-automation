@@ -57,7 +57,9 @@ export const taskCatalog = Object.freeze([
     id: 'procare-subscriber-synchronization', name: 'Procare subscriber synchronization',
     description: 'Find exact subscribers in North production Procare, preview them, then press Synchronize once per subscriber and verify the response.',
     applications: ['Procare'], environments: ['production'], modes: ['preview', 'apply'],
-    availability: 'North production only. Preview opens each subscriber without synchronizing. Apply sends real synchronization requests after confirmation.',
+    // The operator may skip preview and confirm a direct apply for this task only.
+    directApply: true,
+    availability: 'North production only. Preview opens each subscriber without synchronizing. Apply sends real synchronization requests after confirmation. Choose Run now to skip the preview.',
     inputs: [
       { name: 'usernames', label: 'Usernames', type: 'textarea', required: true, maxLength: 10000,
         placeholder: 'One exact username per line', help: 'Up to 100 exact North subscriber usernames. Case and leading zeroes are preserved. Use the CLI --workbook option for Excel batches.' }

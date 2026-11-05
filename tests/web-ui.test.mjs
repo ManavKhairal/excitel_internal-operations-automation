@@ -291,3 +291,30 @@ test('browser shows Procare subscriber sync, previews and applies a live-confirm
   await page.screenshot({ path: path.join(evidence, 'procare-sync-result-desktop.png'), fullPage: true });
   assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
 });
+
+test('browser Run now option skips preview after explicit confirmation for Procare sync', { timeout: 45000 }, async t => {
+  const fixtureBrowser = await testBrowser(); t.after(() => fixtureBrowser.close());
+  const app = await startDashboard({ execute: (job, callbacks) => procareSyncWebExecutor(fixtureBrowser, job, callbacks) }); t.after(() => app.dispose());
+  const { page, errors, failedRequests } = await browserFor(t);
+  await login(page, app.base);
+  await go(page, 'Run task', 'Run an automation');
+  await page.getByLabel('Automation', { exact: true }).selectOption('workforce-access');
+  assert.equal(await page.getByLabel('Run mode').count(), 0);
+  await page.getByLabel('Automation', { exact: true }).selectOption('procare-subscriber-synchronization');
+  assert.equal(await page.getByLabel('Run mode').inputValue(), 'preview');
+  await page.getByLabel('Usernames').fill('sync.one\n000123');
+  await page.getByLabel('Run mode').selectOption('direct');
+  await page.getByRole('button', { name: 'Run now', exact: true }).click();
+  await page.getByRole('dialog').getByText('No preview was run', { exact: false }).waitFor();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.equal(await page.getByRole('dialog').isVisible(), false);
+  await page.getByRole('button', { name: 'Run now', exact: true }).click();
+  await page.locator('#apply-ack').check();
+  await page.getByRole('button', { name: 'Confirm live synchronization', exact: true }).click();
+  await page.getByText('Apply (no preview) execution', { exact: false }).waitFor();
+  await page.getByText('Sync Response Verified', { exact: true }).nth(1).waitFor();
+  await page.getByText('2 of 2 records completed', { exact: true }).waitFor();
+  assert.equal(await page.getByText('Would Synchronize', { exact: true }).count(), 0);
+  await page.screenshot({ path: path.join(evidence, 'procare-sync-run-now-desktop.png'), fullPage: true });
+  assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
+});

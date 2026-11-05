@@ -10,6 +10,8 @@ The production sign-in page and application routes were reviewed, and prior auth
 
 Run `npm run web`, sign in, open **Run task** and select **Procare subscriber synchronization**. The only environment is **Live production — North Procare**. Paste up to 100 exact usernames, one per line, and choose **Run preview**. Preview searches and opens each subscriber without synchronizing. After reviewing the results, choose **Review & apply**, tick the acknowledgement and choose **Confirm live synchronization**. Apply searches every username again, presses Synchronize once per found subscriber, verifies the response and signs out. Reports are downloadable as JSON/CSV.
 
+To skip the preview, set **Run mode** to **Run now — skip preview and apply** and choose **Run now**. A confirmation dialog lists the usernames; tick the acknowledgement and choose **Confirm live synchronization** to start the real synchronization immediately. The run still searches each subscriber, presses Synchronize at most once, verifies the response and stops on an uncertain result. The execution is labelled **Apply (no preview)**. Only this task offers Run now; other dashboard tasks still require a preview.
+
 The dashboard needs `PROCARE_SYNC_USERNAME` and `PROCARE_SYNC_PASSWORD` in `.env`. It does not read or update Excel workbooks or Google Sheets; use the CLI `--workbook` option for workbook batches and Status tracking.
 
 ## Credentials
