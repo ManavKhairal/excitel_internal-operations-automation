@@ -89,13 +89,14 @@ export class ExecutionManager {
       if (!report && !error) continue;
       const id = `legacy-${hash(entry.name).slice(0, 20)}`;
       const stat = await fs.stat(directory);
-      const taskId = report?.task || (report?.partner ? 'erp-deactivation' : entry.name.includes('deposit') ? 'deposit-refundability' : 'unknown');
+      const taskId = report?.task || (report?.partner ? 'erp-deactivation' : entry.name.includes('deposit') ? 'deposit-refundability' : entry.name.includes('procare-sync') ? 'procare-subscriber-synchronization' : 'unknown');
       const input = taskId === 'erp-deactivation' ? { partner: report?.partner?.name || '', pagination: 'auto' }
         : taskId === 'workforce-access' ? {
           usernames: [...new Set(report?.results?.map(row => row.username).filter(Boolean) || [])],
           tenant: [...new Set(report?.results?.map(row => row.tenant).filter(Boolean) || [])].length === 2 ? 'both' : report?.results?.[0]?.tenant || '',
           action: report?.action || 'grant'
-        } : { usernames: report?.results?.map(row => row.username).filter(Boolean) || [], refundable: report?.targetRefundable ?? 1 };
+        } : taskId === 'procare-subscriber-synchronization' ? { usernames: report?.results?.map(row => row.username).filter(Boolean) || [] }
+        : { usernames: report?.results?.map(row => row.username).filter(Boolean) || [], refundable: report?.targetRefundable ?? 1 };
       this.executions.set(id, { id, directory, taskId, taskName: taskName(taskId), input, environment: report?.environment || 'unknown',
         mode: report?.mode === 'apply' ? 'apply' : 'preview', status: report ? statusOf(report) : 'failed', source: 'cli',
         createdAt: report?.startedAt || stat.birthtime.toISOString(), startedAt: report?.startedAt || null, finishedAt: report?.finishedAt || null,
@@ -279,6 +280,7 @@ export class ExecutionManager {
     applications.push({ name: 'Deposit database & Google Sheets', environment: 'offline-demo', available: true, session: 'not_prepared' });
     applications.push({ name: 'Deposit database (manual usernames, no Sheets)', environment: 'production-manual', available: true, session: 'fresh_per_run' });
     applications.push({ name: 'Workforce', environment: 'staging', available: true, session: 'fresh_per_run' });
+    applications.push({ name: 'Procare subscriber sync (North)', environment: 'production', available: true, session: 'fresh_per_run' });
     return { ...this.settings, environment: 'staging', productionEnabled: true, depositManualEnabled: true, concurrency: 1, host: '127.0.0.1', operatorTimeoutMinutes: 10, applications };
   }
   async updateSettings(input) {

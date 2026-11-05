@@ -1,7 +1,10 @@
 import { taskCatalog } from '../task-registry.mjs';
 import { validateInput } from '../tasks/deposit-refundability.mjs';
 import { validateWorkforceInput } from '../tasks/workforce-access.mjs';
+import { validateSyncInput, dashboardSyncSnapshot } from '../tasks/procare-subscriber-synchronization.mjs';
 import { HttpError, onlyKeys, assertObject } from './security.mjs';
+
+export const PROCARE_DASHBOARD_MAX_USERS = 100;
 
 export function validateRequest(body, maxUsers = 20) {
   onlyKeys(body, ['taskId', 'environment', 'mode', 'input', 'idempotencyKey', 'previewId', 'confirmed']);
@@ -34,6 +37,16 @@ export function validateRequest(body, maxUsers = 20) {
       const valid = validateWorkforceInput({ ...body.input, apply: body.mode === 'apply' }, maxUsers);
       input = { usernames: valid.usernames, tenant: body.input.tenant, action: valid.action };
     } catch (error) { throw new HttpError(400, error.code || 'INVALID_INPUT', error.message); }
+  } else if (task.id === 'procare-subscriber-synchronization') {
+    onlyKeys(body.input, ['usernames']);
+    if (!Array.isArray(body.input.usernames) || body.input.usernames.some(value => typeof value !== 'string')) throw new HttpError(400, 'INVALID_USERNAMES', 'Provide a list of exact usernames.');
+    try {
+      const valid = validateSyncInput(dashboardSyncSnapshot(body.input.usernames), PROCARE_DASHBOARD_MAX_USERS);
+      input = { usernames: valid.usernames };
+    } catch (error) {
+      throw new HttpError(400, error.code === 'SHEET_INPUT' ? 'INVALID_USERNAMES' : error.code || 'INVALID_INPUT',
+        error.code === 'SHEET_INPUT' ? `Provide 1–${PROCARE_DASHBOARD_MAX_USERS} exact usernames. Use the CLI --workbook option for larger batches.` : error.message);
+    }
   } else {
     throw new HttpError(400, 'TASK_UNAVAILABLE', 'This task has not yet registered a server-side input validator.');
   }

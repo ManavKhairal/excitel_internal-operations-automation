@@ -6,6 +6,12 @@ This is a separate task for North production Procare, using a reviewed username 
 
 The production sign-in page and application routes were reviewed, and prior authenticated runs produced verified synchronization responses. The checked-in configuration sets `liveUiReviewed` to `true`, so `--apply` can send production synchronization requests. Preview each new batch, confirm its source and exact usernames, and inspect the prior report before restarting an interrupted run. An offline test suite also covers the UI workflow and request guard. Branch cleanup did not execute the live task.
 
+## Dashboard
+
+Run `npm run web`, sign in, open **Run task** and select **Procare subscriber synchronization**. The only environment is **Live production — North Procare**. Paste up to 100 exact usernames, one per line, and choose **Run preview**. Preview searches and opens each subscriber without synchronizing. After reviewing the results, choose **Review & apply**, tick the acknowledgement and choose **Confirm live synchronization**. Apply searches every username again, presses Synchronize once per found subscriber, verifies the response and signs out. Reports are downloadable as JSON/CSV.
+
+The dashboard needs `PROCARE_SYNC_USERNAME` and `PROCARE_SYNC_PASSWORD` in `.env`. It does not read or update Excel workbooks or Google Sheets; use the CLI `--workbook` option for workbook batches and Status tracking.
+
 ## Credentials
 
 Fill the dedicated fields in the ignored local `.env`:

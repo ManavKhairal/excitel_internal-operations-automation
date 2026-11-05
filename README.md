@@ -6,7 +6,7 @@ Run `npm run web` and open **http://127.0.0.1:4310**. In a second terminal, run
 `npm run web:token` to display the private local access token for sign-in.
 The dashboard provides schema-driven task forms, preview review and confirmed
 apply, live execution monitoring, existing CLI history, report downloads and
-non-sensitive settings. ERP and Workforce remain staging-only; deposit supports live manual usernames without Google Sheets, plus an offline demo.
+non-sensitive settings. ERP and Workforce remain staging-only; deposit supports live manual usernames without Google Sheets, plus an offline demo; Procare subscriber synchronization runs against North production after preview and confirmation.
 The original CLI commands below continue to work and share the dashboard's run lock.
 
 See [installation, operation, recovery and adding tasks](docs/web-dashboard.md).
@@ -25,7 +25,7 @@ For deposits, select **Live deposits — manual input**, paste up to 20 exact us
 
 The [Workforce task](docs/workforce-access.md) uses independent `WORKFORCE_USERNAME` / `WORKFORCE_PASSWORD` credentials. It grants or removes membership in the first Sales User Group in North, South or both tenants, preserves other members/settings, skips already-correct membership, verifies saved results and signs out. Use `--action grant` (the default) or explicit `--action remove`, with `--apply` for saves. Missing users are reported per tenant while processing continues in the other tenant.
 
-The [Procare subscriber synchronization task](docs/procare-subscriber-synchronization.md) reads exact North usernames from a reviewed sheet snapshot or Excel workbook. It uses separate production credentials, previews by default, and requires `--apply` to synchronize.
+The [Procare subscriber synchronization task](docs/procare-subscriber-synchronization.md) reads exact North usernames from a reviewed sheet snapshot or Excel workbook. It uses separate production credentials, previews by default, and requires `--apply` to synchronize. It is also available in the dashboard for pasted usernames (up to 100 per run).
 
 For branch creation, merging, and rollbacks, see [branching and recovery](docs/branching.md).
 

@@ -8,6 +8,7 @@ import { taskCatalog } from '../src/task-registry.mjs';
 import { progressOf } from '../src/web/reports.mjs';
 import { testBrowser } from './fixtures.mjs';
 import { workforceWebExecutor } from './workforce-web-fixtures.mjs';
+import { procareSyncWebExecutor } from './procare-web-fixtures.mjs';
 import { manualDepositFixture } from './deposit-web-fixtures.mjs';
 import { TEST_TOKEN, deferred, fixtureExecutor, makeRoot, pause, requestBody, startDashboard } from './web-fixtures.mjs';
 
@@ -41,8 +42,9 @@ test('task discovery is registry-driven, settings expose safe supported values a
   const tasks = await app.request('/api/tasks');
   assert.equal(tasks.status, 200);
   assert.deepEqual(tasks.data.tasks, taskCatalog);
-  assert.deepEqual(tasks.data.tasks.map(task => task.id).sort(), ['deposit-refundability', 'erp-deactivation', 'workforce-access']);
-  assert.ok(tasks.data.tasks.every(task => !task.environments.includes('production')));
+  assert.deepEqual(tasks.data.tasks.map(task => task.id).sort(), ['deposit-refundability', 'erp-deactivation', 'procare-subscriber-synchronization', 'workforce-access']);
+  // Only the North Procare synchronization task is exposed against production.
+  assert.deepEqual(tasks.data.tasks.filter(task => task.environments.includes('production')).map(task => task.id), ['procare-subscriber-synchronization']);
   assert.deepEqual((await app.request('/api/executions')).data.executions, []);
   const settings = (await app.request('/api/settings')).data.settings;
   assert.equal(settings.productionEnabled, true); assert.equal(settings.depositManualEnabled, true); assert.equal(settings.concurrency, 1); assert.equal(settings.host, '127.0.0.1');
@@ -395,4 +397,44 @@ test('manual live deposit API requires tenant and matching preview, binds dispat
   assert.equal(dispatched[1].approvedDeposits[0].rows.length, 4);
   assert.equal(fixture.state.events.filter(event => event.action === 'save').length, 0);
   assert.equal(fixture.state.events.filter(event => event.action.startsWith('sheet-')).length, 0);
+});
+
+test('Procare subscriber synchronization validates dashboard input, previews without syncing and applies once per subscriber', { timeout: 45000 }, async t => {
+  const browser = await testBrowser(); t.after(() => browser.close());
+  const syncEvents = [];
+  const app = await startDashboard({ execute: async (job, callbacks) => { const result = await procareSyncWebExecutor(browser, job, callbacks); syncEvents.push(...result.events); return { exitCode: result.exitCode }; } });
+  t.after(() => app.dispose());
+  for (const [body, code] of [
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'staging', input: { usernames: ['sync.one'] } }, 'ENVIRONMENT_DISABLED'],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: [] } }, 'INVALID_USERNAMES'],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: Array.from({ length: 101 }, (_, i) => `user${i}`) } }, 'INVALID_USERNAMES'],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: ['sync.one'], workbook: '/etc/passwd' } }, null],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: [42] } }, 'INVALID_USERNAMES']
+  ]) {
+    const response = await app.request('/api/executions', { method: 'POST', body: requestBody(body) });
+    assert.equal(response.status, 400, response.text);
+    if (code) assert.equal(response.data.error.code, code);
+  }
+  const input = { usernames: ['sync.one', '000123', 'sync.one'] };
+  const preview = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', input }) });
+  assert.equal(preview.status, 202, preview.text);
+  assert.deepEqual(preview.data.execution.input.usernames, ['sync.one', '000123']);
+  const reviewed = await app.finish(preview.data.execution.id, { timeout: 15000 });
+  assert.equal(reviewed.status, 'succeeded', JSON.stringify(reviewed.error));
+  assert.equal(reviewed.canApply, true);
+  assert.deepEqual(reviewed.records.map(row => row.outcome), ['WOULD_SYNCHRONIZE', 'WOULD_SYNCHRONIZE']);
+  assert.equal(syncEvents.filter(event => event.action === 'synchronize').length, 0);
+  assert.equal(reviewed.cleanup.results[0].outcome, 'SIGNED_OUT_VERIFIED');
+  const apply = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', mode: 'apply', input: { usernames: ['sync.one', '000123'] }, previewId: reviewed.id, confirmed: true }) });
+  assert.equal(apply.status, 202, apply.text);
+  const done = await app.finish(apply.data.execution.id, { timeout: 15000 });
+  assert.equal(done.status, 'succeeded', JSON.stringify(done.error));
+  assert.deepEqual(done.records.map(row => row.outcome), ['SYNC_RESPONSE_VERIFIED', 'SYNC_RESPONSE_VERIFIED']);
+  assert.ok(done.records.every(row => row.saveAttempted));
+  assert.deepEqual(syncEvents.filter(event => event.action === 'synchronize').map(event => event.username), ['sync.one', '000123']);
+  assert.equal(done.progress.completed, 2); assert.equal(done.progress.failed, 0);
+  assert.ok(done.events.some(event => event.stage === 'saving' && event.currentRecord === '000123'));
+  assert.equal((await app.request(done.artifacts.find(item => item.name === 'report.csv').url)).status, 200);
+  const reused = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', mode: 'apply', input: { usernames: ['sync.one', '000123'] }, previewId: reviewed.id, confirmed: true }) });
+  assert.equal(reused.status, 409);
 });

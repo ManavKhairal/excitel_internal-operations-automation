@@ -52,6 +52,16 @@ export const taskCatalog = Object.freeze([
         options: [{ value: 'grant', label: 'Grant membership' }, { value: 'remove', label: 'Remove membership' }],
         help: 'Removal is explicit and applies only to the selected first Sales User Group.' }
     ]
+  },
+  {
+    id: 'procare-subscriber-synchronization', name: 'Procare subscriber synchronization',
+    description: 'Find exact subscribers in North production Procare, preview them, then press Synchronize once per subscriber and verify the response.',
+    applications: ['Procare'], environments: ['production'], modes: ['preview', 'apply'],
+    availability: 'North production only. Preview opens each subscriber without synchronizing. Apply sends real synchronization requests after confirmation.',
+    inputs: [
+      { name: 'usernames', label: 'Usernames', type: 'textarea', required: true, maxLength: 10000,
+        placeholder: 'One exact username per line', help: 'Up to 100 exact North subscriber usernames. Case and leading zeroes are preserved. Use the CLI --workbook option for Excel batches.' }
+    ]
   }
 ]);
 

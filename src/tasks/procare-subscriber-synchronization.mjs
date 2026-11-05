@@ -7,6 +7,7 @@ export function validateSyncInput(snapshot, maxUsers = 500) {
   const source = snapshot?.source;
   const recognizedSource = source?.kind === 'xlsx'
     ? typeof source.path === 'string' && source.path.endsWith('.xlsx') && /^[a-f0-9]{64}$/.test(source.sha256 || '')
+    : source?.kind === 'dashboard' ? true
     : /^[A-Za-z0-9_-]+$/.test(source?.spreadsheetId || '');
   if (!snapshot || snapshot.tenant !== 'north' || !snapshot.source ||
       !recognizedSource ||
@@ -23,6 +24,13 @@ export function validateSyncInput(snapshot, maxUsers = 500) {
     return validUsername(value);
   }))];
   return { tenant: 'north', source: { ...snapshot.source }, usernames, inputHash: hash(usernames) };
+}
+
+// Usernames pasted into the local dashboard. The operator's list is the source;
+// there is no sheet to refresh or update.
+export function dashboardSyncSnapshot(usernames, checkedAt = new Date().toISOString()) {
+  const count = Array.isArray(usernames) ? Math.max(usernames.length, 1) : 1;
+  return { tenant: 'north', source: { kind: 'dashboard', tab: 'Dashboard input', range: `A1:A${count}`, checkedAt }, usernames };
 }
 
 export async function runSubscriberSync(input, { config, apply = false, openSession, checkpoint = async () => {}, now = () => new Date().toISOString() }) {

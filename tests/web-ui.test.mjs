@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import { TEST_TOKEN, deferred, fixtureExecutor, repository, startDashboard } from './web-fixtures.mjs';
 import { testBrowser } from './fixtures.mjs';
 import { workforceWebExecutor } from './workforce-web-fixtures.mjs';
+import { procareSyncWebExecutor } from './procare-web-fixtures.mjs';
 import { manualDepositFixture } from './deposit-web-fixtures.mjs';
 
 const evidence = path.join(repository, 'output', 'web-test-evidence');
@@ -52,7 +53,7 @@ test('browser dashboard navigation, input validation, preview/apply, history, do
   await page.getByText('All clear. Nothing is running.', { exact: true }).waitFor();
   await page.screenshot({ path: path.join(evidence, 'dashboard-empty-desktop.png'), fullPage: true });
   await go(page, 'Automations', 'Automation library');
-  assert.equal(await page.locator('.module-card').count(), 3);
+  assert.equal(await page.locator('.module-card').count(), 4);
   await page.getByRole('heading', { name: 'Deposit refundability', exact: true }).waitFor();
   await page.getByRole('heading', { name: 'Workforce Sales group access', exact: true }).waitFor();
   await go(page, 'Reports', 'Reports & evidence');
@@ -265,5 +266,28 @@ test('browser changes two directly entered deposit users with live confirmation 
   assert.equal(report.environment, 'production-manual'); assert.equal(report.inputSource, 'manual');
   assert.ok(report.results.every(result => result.sheet.status === 'NOT_REQUESTED_MANUAL' && result.logout === 'SIGNED_OUT_VERIFIED'));
   await page.screenshot({ path: path.join(evidence, 'deposit-manual-result-desktop.png'), fullPage: true });
+  assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
+});
+
+test('browser shows Procare subscriber sync, previews and applies a live-confirmed fixture synchronization', { timeout: 45000 }, async t => {
+  const fixtureBrowser = await testBrowser(); t.after(() => fixtureBrowser.close());
+  const app = await startDashboard({ execute: (job, callbacks) => procareSyncWebExecutor(fixtureBrowser, job, callbacks) }); t.after(() => app.dispose());
+  const { page, errors, failedRequests } = await browserFor(t);
+  await login(page, app.base);
+  await go(page, 'Run task', 'Run an automation');
+  await page.getByLabel('Automation', { exact: true }).selectOption('procare-subscriber-synchronization');
+  assert.equal(await page.getByLabel('Environment').inputValue(), 'production');
+  assert.match(await page.getByLabel('Environment').locator('option:checked').innerText(), /Live production — North Procare/);
+  await page.getByLabel('Usernames').fill('sync.one\n000123');
+  await page.getByRole('button', { name: 'Run preview', exact: true }).click();
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).waitFor();
+  assert.equal(await page.getByText('Would Synchronize', { exact: true }).count(), 2);
+  await page.getByRole('button', { name: 'Review & apply', exact: true }).click();
+  await page.getByRole('dialog').getByText('North production Procare', { exact: false }).first().waitFor();
+  await page.locator('#apply-ack').check();
+  await page.getByRole('button', { name: 'Confirm live synchronization', exact: true }).click();
+  await page.getByText('Sync Response Verified', { exact: true }).nth(1).waitFor();
+  await page.getByText('2 of 2 records completed', { exact: true }).waitFor();
+  await page.screenshot({ path: path.join(evidence, 'procare-sync-result-desktop.png'), fullPage: true });
   assert.deepEqual(errors, []); assert.deepEqual(failedRequests, []);
 });

@@ -27,14 +27,15 @@ async function readConfig(root, filename, positiveKeys) {
 // The caller may already own the shared filesystem lock (the web manager does).
 // Output paths and settings are server-side values, never browser-supplied paths.
 export async function runTask(taskId, input, {
-  root = defaultRoot, outputDir, ask, onEvent = async () => {}, lockHeld = false, settings = {}, openWorkforceSession, openDepositSession, approvedDeposits
+  root = defaultRoot, outputDir, ask, onEvent = async () => {}, lockHeld = false, settings = {}, openWorkforceSession, openDepositSession, openSyncSession, approvedDeposits
 } = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new StopError('INPUT', 'Task input must be an object.');
   if (input.apply !== undefined && typeof input.apply !== 'boolean') throw new StopError('INPUT', 'Apply must be true or false.');
-  const context = { root, outputDir, ask, onEvent, lockHeld, settings, openWorkforceSession, openDepositSession, approvedDeposits };
+  const context = { root, outputDir, ask, onEvent, lockHeld, settings, openWorkforceSession, openDepositSession, openSyncSession, approvedDeposits };
   if (taskId === 'erp-deactivation') return runErp(input, context);
   if (taskId === 'deposit-refundability') return runDeposit(input, context);
   if (taskId === 'workforce-access') return runWorkforce(input, context);
+  if (taskId === 'procare-subscriber-synchronization') return runProcareSync(input, context);
   throw new StopError('UNKNOWN_TASK', 'Unknown automation task.');
 }
 
@@ -293,6 +294,66 @@ async function runWorkforce(input, { root, outputDir, ask, onEvent, lockHeld, se
     for (const result of report.results) console.log(`${result.username} / ${result.tenant}: ${result.outcome}${result.message ? ' — ' + result.message : ''}`);
     console.log(`Logout: ${report.cleanup.logout}; reports: ${directory}`);
     if (report.error) console.error(`${report.error.code}: ${report.error.message}`);
+    return { report, outputDir: directory, exitCode: report.status === 'COMPLETED_WITH_EXCEPTIONS' ? 2 : 0 };
+  } catch (error) {
+    await writeJson(path.join(directory, 'error.json'), { code: error.code || 'FAILED', message: firstLine(error) }).catch(() => {});
+    throw error;
+  } finally { if (releaseLock) await releaseLock(); }
+}
+
+export async function saveSyncReport(directory, report) {
+  await writeJson(path.join(directory, 'report.json'), report);
+  const fields = ['username', 'subscriberId', 'outcome', 'syncAttempted', 'requestDispatched', 'finishedAt', 'message'];
+  await fs.writeFile(path.join(directory, 'report.csv'),
+    [fields.join(','), ...report.results.map(result => fields.map(field => csvCell(field === 'message' ? result.error?.message : result[field])).join(','))].join('\n') + '\n', { mode: 0o600 });
+}
+
+// Dashboard path for North production Procare subscriber synchronization.
+// The CLI keeps its own sheet/workbook entry point in subscriber-sync-cli.mjs.
+async function runProcareSync(input, { root, outputDir, onEvent, lockHeld, settings, openSyncSession }) {
+  const { validateSyncInput, runSubscriberSync, dashboardSyncSnapshot } = await import('./tasks/procare-subscriber-synchronization.mjs');
+  const { validateSyncConfig, createProcareSyncSession } = await import('./integrations/procare-subscriber-sync.mjs');
+  const config = await readConfig(root, 'procare-subscriber-synchronization.json', ['timeoutMs', 'maxUsers']);
+  validateSyncConfig(config);
+  if (input.environment !== undefined && input.environment !== 'production') throw new StopError('WRONG_ENVIRONMENT', 'Subscriber synchronization runs only against North production Procare.');
+  if (Object.keys(input).some(key => !['usernames', 'apply', 'environment'].includes(key))) throw new StopError('INPUT', 'Unsupported synchronization input.');
+  const apply = input.apply === true;
+  const snapshot = dashboardSyncSnapshot(input.usernames);
+  const request = validateSyncInput(snapshot, config.maxUsers);
+  if (apply && !config.liveUiReviewed) throw new StopError('SYNC_UI_NOT_REVIEWED', 'Production synchronization awaits the first reviewed preview.');
+  if (typeof settings.screenshots === 'boolean') config.screenshots = settings.screenshots;
+  await loadEnvironment(root);
+  const credentials = { username: process.env.PROCARE_SYNC_USERNAME, password: process.env.PROCARE_SYNC_PASSWORD };
+  if (!openSyncSession && (!credentials.username || !credentials.password)) throw new StopError('LOGIN_CONFIG', 'Fill PROCARE_SYNC_USERNAME and PROCARE_SYNC_PASSWORD in the local .env, then restart the dashboard run.');
+  const releaseLock = lockHeld ? null : await acquireLock(path.join(root, '.state'));
+  const directory = outputDir || path.join(root, 'output', `${timestamp()}-procare-sync-${safeName(request.usernames[0])}`);
+  const stage = (name, message, currentRecord) => onEvent({ type: 'stage', stage: name, message, ...(currentRecord ? { currentRecord } : {}) });
+  try {
+    await privateDir(directory);
+    console.log(`MODE: ${apply ? 'APPLY' : 'PREVIEW'} — ${request.usernames.length} unique North subscriber(s).`);
+    // Wrap session operations to emit genuine stages without changing the workflow.
+    const openSession = async () => {
+      await stage('authenticating', 'Opening North production Procare and signing in.');
+      const session = openSyncSession ? await openSyncSession() : await createProcareSyncSession(config, credentials, { apply, directory });
+      // Every call keeps the real session as `this`, so its request guard state is unchanged.
+      return {
+        ensureLogin: () => session.ensureLogin(),
+        findSubscriber: async username => { await stage('processing', 'Searching for the exact subscriber and opening the profile.', username); return session.findSubscriber(username); },
+        prepareSynchronization: async (subscriber, onDispatch) => {
+          const synchronizeOnce = await session.prepareSynchronization(subscriber, onDispatch);
+          return async () => { await stage('saving', 'Pressing Synchronize once and verifying the Procare response.', subscriber.username); return synchronizeOnce(); };
+        },
+        diagnostics: session.diagnostics ? () => session.diagnostics() : undefined,
+        logout: async () => { await stage('cleanup', 'Signing out of Procare and verifying logout.'); return session.logout(); },
+        close: () => session.close(),
+        get audit() { return session.audit; },
+        get blocked() { return session.blocked; }
+      };
+    };
+    const report = await runSubscriberSync(snapshot, { config, apply, openSession,
+      checkpoint: async value => { await saveSyncReport(directory, value); await onEvent({ type: 'checkpoint' }); } });
+    for (const result of report.results) console.log(`${result.username}: ${result.outcome}${result.error ? ' — ' + result.error.message : ''}`);
+    console.log(`Logout: ${report.cleanup.logout}; reports: ${directory}`);
     return { report, outputDir: directory, exitCode: report.status === 'COMPLETED_WITH_EXCEPTIONS' ? 2 : 0 };
   } catch (error) {
     await writeJson(path.join(directory, 'error.json'), { code: error.code || 'FAILED', message: firstLine(error) }).catch(() => {});

@@ -57,6 +57,12 @@ function webInput(taskId, input) {
     if (Object.keys(input).some(key => !['usernames', 'tenant', 'action', 'apply', 'environment'].includes(key))) throw new StopError('INPUT', 'Unsupported Workforce worker input.');
     return input;
   }
+  if (taskId === 'procare-subscriber-synchronization') {
+    if (input.environment !== 'production') throw new StopError('WRONG_ENVIRONMENT', 'Subscriber synchronization runs only against North production Procare.');
+    if (!Array.isArray(input.usernames) || input.usernames.some(username => typeof username !== 'string')) throw new StopError('INPUT', 'Subscriber synchronization requires exact usernames.');
+    if (Object.keys(input).some(key => !['usernames', 'apply', 'environment'].includes(key))) throw new StopError('INPUT', 'Unsupported synchronization worker input.');
+    return input;
+  }
   throw new StopError('UNKNOWN_TASK', 'Unknown automation task.');
 }
 async function start(message) {

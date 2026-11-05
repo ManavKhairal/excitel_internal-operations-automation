@@ -18,7 +18,7 @@ export async function readJson(directory, name) {
   catch (error) { if (['ENOENT', 'ELOOP'].includes(error.code) || error instanceof SyntaxError || error.status === 404) return null; throw error; }
 }
 
-const allowed = new Set(['schemaVersion', 'inputSource', 'task', 'executionId', 'environment', 'mode', 'partner', 'name', 'id', 'collectedAt', 'startedAt', 'finishedAt', 'status', 'results', 'rows', 'summary', 'cleanup', 'username', 'tenant', 'targetRefundable', 'key', 'subscriberId', 'isCovered', 'isBundled', 'refundable', 'before', 'after', 'saveAttempted', 'outcome', 'detailUrl', 'evidence', 'message', 'verifiedAt', 'error', 'code', 'time', 'logout', 'logoutError', 'closeError', 'application', 'sheet', 'date', 'usernames', 'pages', 'pageCount', 'sourceUrl', 'count', 'uniqueCount', 'total', 'url', 'action', 'group', 'groupId', 'groupName', 'writeRequests', 'blockedRequests', 'dispatchedAt', 'reason', 'method', 'browser', 'requested', 'granted', 'removed', 'alreadyMember', 'alreadyNotMember', 'missing', 'saveAttempts']);
+const allowed = new Set(['schemaVersion', 'inputSource', 'task', 'executionId', 'environment', 'mode', 'partner', 'name', 'id', 'collectedAt', 'startedAt', 'finishedAt', 'status', 'results', 'rows', 'summary', 'cleanup', 'username', 'tenant', 'targetRefundable', 'key', 'subscriberId', 'isCovered', 'isBundled', 'refundable', 'before', 'after', 'saveAttempted', 'outcome', 'detailUrl', 'evidence', 'message', 'verifiedAt', 'error', 'code', 'time', 'logout', 'logoutError', 'closeError', 'application', 'sheet', 'date', 'usernames', 'pages', 'pageCount', 'sourceUrl', 'count', 'uniqueCount', 'total', 'url', 'action', 'group', 'groupId', 'groupName', 'writeRequests', 'blockedRequests', 'dispatchedAt', 'reason', 'method', 'browser', 'requested', 'granted', 'removed', 'alreadyMember', 'alreadyNotMember', 'missing', 'saveAttempts', 'subscriberErpId', 'syncAttempted', 'requestDispatched', 'verified', 'attempted', 'dispatched']);
 export function sanitizeReport(value, key = '', depth = 0) {
   if (depth > 12) return null;
   if (Array.isArray(value)) return value.slice(0, 20000).map(item => sanitizeReport(item, key, depth + 1));
@@ -30,9 +30,9 @@ export function sanitizeReport(value, key = '', depth = 0) {
   return value;
 }
 export function category(outcome) {
-  if (['NOT_PROCESSED', 'VALIDATED', 'SAVE_STARTED_UNVERIFIED', 'IN_PROGRESS', 'APPEND_STARTED_UNVERIFIED'].includes(outcome)) return 'pending';
+  if (['NOT_PROCESSED', 'VALIDATED', 'SAVE_STARTED_UNVERIFIED', 'SYNC_STARTED_UNVERIFIED', 'IN_PROGRESS', 'APPEND_STARTED_UNVERIFIED'].includes(outcome)) return 'pending';
   if (/^(ALREADY_|SKIPPED_)/.test(outcome)) return 'skipped';
-  if (/^(DRY_RUN_|WOULD_)|^(DEACTIVATED_VERIFIED|REFUNDABLE_VERIFIED|NON_REFUNDABLE_VERIFIED|ACCESS_GRANTED_VERIFIED|ACCESS_REMOVED_VERIFIED|COMPLETED|PREVIEW_COMPLETED)$/.test(outcome)) return 'successful';
+  if (/^(DRY_RUN_|WOULD_)|^(DEACTIVATED_VERIFIED|REFUNDABLE_VERIFIED|NON_REFUNDABLE_VERIFIED|ACCESS_GRANTED_VERIFIED|ACCESS_REMOVED_VERIFIED|SYNC_RESPONSE_VERIFIED|COMPLETED|PREVIEW_COMPLETED)$/.test(outcome)) return 'successful';
   return 'failed';
 }
 export function recordsOf(report) {
@@ -40,7 +40,7 @@ export function recordsOf(report) {
   return report.results.flatMap(result => {
     const rows = Array.isArray(result.rows) && result.rows.length ? result.rows : [result];
     return rows.map(row => ({ username: result.username || row.username || '', recordKey: row.key || '', tenant: result.tenant || '',
-      outcome: row.outcome || result.outcome || 'NOT_PROCESSED', before: row.before ?? '', after: row.after ?? '', saveAttempted: Boolean(row.saveAttempted),
+      outcome: row.outcome || result.outcome || 'NOT_PROCESSED', before: row.before ?? '', after: row.after ?? '', saveAttempted: Boolean(row.saveAttempted ?? row.syncAttempted),
       message: redact(row.message || result.error?.message || result.sheet?.error?.message || ''),
       category: report.mode === 'apply' && /^WOULD_/.test(row.outcome || '') ? 'pending' : category(row.outcome || result.outcome || 'NOT_PROCESSED') }));
   });
@@ -53,11 +53,11 @@ export function progressOf(report) {
   return counts;
 }
 export function cleanupOf(report, fallback = null) {
-  if (report?.task === 'workforce-access' && report.cleanup) {
+  if (['workforce-access', 'procare-subscriber-synchronization'].includes(report?.task) && report.cleanup) {
     const cleanup = report.cleanup;
     return { status: cleanup.logout === 'LOGOUT_FAILED' || cleanup.browser === 'CLOSE_FAILED' ? 'COMPLETED_WITH_ERRORS' :
       cleanup.logout === 'NOT_REQUIRED' && cleanup.browser === 'NOT_OPENED' ? 'NOT_REQUIRED' : !report.finishedAt ? 'IN_PROGRESS' : 'COMPLETED',
-      results: [{ application: 'Workforce', outcome: cleanup.logout, ...(cleanup.error ? { error: cleanup.error } : {}) },
+      results: [{ application: report.task === 'workforce-access' ? 'Workforce' : 'Procare (North production)', outcome: cleanup.logout, ...(cleanup.error || cleanup.logoutError ? { error: cleanup.error || cleanup.logoutError } : {}) },
         { application: 'Browser', outcome: cleanup.browser, ...(cleanup.closeError ? { error: cleanup.closeError } : {}) }] };
   }
   if (report?.cleanup) return report.cleanup;
@@ -76,7 +76,7 @@ export function statusOf(report, exitCode = 0) {
   if (!report) return 'failed';
   if (['IN_PROGRESS', 'RUNNING'].includes(report.status) || !report.finishedAt) return 'interrupted';
   const progress = progressOf(report);
-  if (report.error && !progress?.completed && !report.results?.some(row => row.saveAttempted)) return 'failed';
+  if (report.error && !progress?.completed && !report.results?.some(row => row.saveAttempted || row.syncAttempted)) return 'failed';
   const cleanupFailed = report.cleanup?.status === 'COMPLETED_WITH_ERRORS' || report.results?.some(row => row.logout === 'LOGOUT_FAILED' || row.closeError || ['FAILED', 'PENDING', 'APPEND_STARTED_UNVERIFIED', 'BLOCKED_PARTIAL_RESULT'].includes(row.sheet?.status));
   if (['HALTED_FOR_REVIEW', 'COMPLETED_WITH_EXCEPTIONS'].includes(report.status) || exitCode !== 0 || cleanupFailed || progress?.failed || progress?.pending) return 'partial';
   if (!['COMPLETED', 'PREVIEW_COMPLETED'].includes(report.status)) return 'failed';
