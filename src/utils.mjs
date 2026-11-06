@@ -114,17 +114,57 @@ export async function diagnostics(page, dir, label, enabled = true) {
   return screenshot(page, dir, label, enabled);
 }
 
-export async function acquireLock(dir) {
+// A process counts as alive unless the OS says it does not exist. EPERM means it
+// exists under another user, so it is treated as alive (conservative).
+export function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code === 'EPERM'; }
+}
+// Returns the stale lock's contents when neither its owner nor its recorded worker
+// process is still running; otherwise null. Unreadable/corrupt locks are not stale.
+async function staleLock(lockFile) {
+  let text;
+  try { text = await fs.readFile(lockFile, 'utf8'); } catch (error) { return error.code === 'ENOENT' ? { text: null } : null; }
+  let data; try { data = JSON.parse(text); } catch { return null; }
+  if (!Number.isInteger(data?.pid)) return null;
+  if (processAlive(data.pid) || (data.workerPid !== undefined && processAlive(data.workerPid))) return null;
+  return { text, data };
+}
+export async function acquireLock(dir, { onStaleCleared } = {}) {
   await privateDir(dir);
   const lockFile = path.join(dir, 'run.lock');
   let handle;
-  try { handle = await fs.open(lockFile, 'wx', 0o600); }
-  catch (error) {
-    if (error.code === 'EEXIST') throw new StopError('LOCKED', 'Another run may be active. Close it first. If a previous process crashed, verify no automation is running, then remove .state/run.lock.');
-    throw error;
+  for (let attempt = 0; !handle; attempt++) {
+    try { handle = await fs.open(lockFile, 'wx', 0o600); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      const stale = attempt === 0 ? await staleLock(lockFile) : null;
+      if (!stale) {
+        let data = null;
+        try { data = JSON.parse(await fs.readFile(lockFile, 'utf8')); } catch {}
+        if (data?.pid === process.pid && !(data.workerPid && processAlive(data.workerPid))) {
+          throw new StopError('LOCKED', 'A previous run in this dashboard was interrupted, so its lock is kept for review. Check that run in Executions, then restart the dashboard (stop it and run npm run web again); the lock clears automatically on restart.');
+        }
+        const owner = data ? ` (process ${data.pid}${data.workerPid ? `, worker ${data.workerPid}` : ''}, started ${data.startedAt})` : '';
+        throw new StopError('LOCKED', `Another automation run is still active${owner}. Wait for it to finish; the lock is released automatically when it ends.`);
+      }
+      // Neither the owner nor its worker exists: a crash or forced close left this behind.
+      // Remove it only if it is still the same file we inspected.
+      if (stale.text !== null) {
+        const current = await fs.readFile(lockFile, 'utf8').catch(() => null);
+        if (current === stale.text) { await fs.unlink(lockFile).catch(() => {}); await onStaleCleared?.(stale.data); }
+      }
+    }
   }
-  await handle.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+  const owner = { pid: process.pid, startedAt: new Date().toISOString() };
+  await handle.writeFile(JSON.stringify(owner));
   const release = async () => { await handle.close(); await fs.unlink(lockFile).catch(() => {}); };
+  // Record the detached worker so a crashed supervisor does not hide a running automation.
+  release.setWorker = async workerPid => {
+    if (!Number.isInteger(workerPid)) return;
+    await handle.truncate(0); await handle.write(JSON.stringify({ ...owner, workerPid }), 0);
+  };
   // A supervising UI can close its handle while retaining the lock after an
   // unexpected worker exit. Existing CLI callers keep the same release API.
   release.preserve = async () => { await handle.close(); };

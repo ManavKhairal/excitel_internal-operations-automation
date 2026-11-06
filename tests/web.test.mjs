@@ -467,3 +467,16 @@ test('direct apply skips preview only for opted-in tasks and still requires expl
   assert.deepEqual(done.records.map(row => row.outcome), ['SYNC_RESPONSE_VERIFIED', 'SYNC_RESPONSE_VERIFIED']);
   assert.deepEqual(syncEvents.filter(event => event.action === 'synchronize').map(event => event.username), ['sync.one', '000123']);
 });
+
+test('a lock left by a closed dashboard is cleared and audited so the next preview can start', async t => {
+  const { spawnSync } = await import('node:child_process');
+  const root = await makeRoot();
+  await fs.mkdir(path.join(root, '.state'), { recursive: true, mode: 0o700 });
+  await fs.writeFile(path.join(root, '.state', 'run.lock'), JSON.stringify({ pid: spawnSync(process.execPath, ['-e', '']).pid, startedAt: '2026-01-01T00:00:00Z' }));
+  const app = await startDashboard({ root }); t.after(async () => { await app.dispose(); await fs.rm(root, { recursive: true, force: true }); });
+  const created = await app.request('/api/executions', { method: 'POST', body: requestBody() });
+  assert.equal(created.status, 202, created.text);
+  assert.equal((await app.finish(created.data.execution.id)).status, 'succeeded');
+  const audit = await fs.readFile(path.join(root, '.state', 'dashboard-audit.jsonl'), 'utf8');
+  assert.match(audit, /"action":"lock.stale_cleared"/);
+});

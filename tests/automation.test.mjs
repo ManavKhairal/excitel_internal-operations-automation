@@ -194,3 +194,25 @@ test('report includes skips and unprocessed users, not just successful changes',
     assert.match(await fs.readFile(path.join(dir, 'report.csv'), 'utf8'), /NOT_PROCESSED/);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
+test('a lock left by a crashed run is cleared automatically, but a live owner or worker keeps it', async () => {
+  const { spawnSync, spawn } = await import('node:child_process');
+  const deadPid = spawnSync(process.execPath, ['-e', '']).pid; // exited before we continue
+  const dir = await tempDir(); const lockFile = path.join(dir, 'run.lock');
+  const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
+  try {
+    await fs.writeFile(lockFile, JSON.stringify({ pid: deadPid, startedAt: '2026-01-01T00:00:00Z' }));
+    const cleared = [];
+    const release = await acquireLock(dir, { onStaleCleared: data => cleared.push(data.pid) });
+    assert.deepEqual(cleared, [deadPid]);
+    assert.equal(JSON.parse(await fs.readFile(lockFile, 'utf8')).pid, process.pid);
+    await release.setWorker(sleeper.pid);
+    assert.equal(JSON.parse(await fs.readFile(lockFile, 'utf8')).workerPid, sleeper.pid);
+    await release();
+    // Owner gone but its detached worker still running: never steal the lock.
+    await fs.writeFile(lockFile, JSON.stringify({ pid: deadPid, workerPid: sleeper.pid, startedAt: '2026-01-01T00:00:00Z' }));
+    await assert.rejects(acquireLock(dir), error => error.code === 'LOCKED' && /still active/.test(error.message));
+    // Unreadable lock contents are not guessed to be stale.
+    await fs.writeFile(lockFile, 'not json');
+    await assert.rejects(acquireLock(dir), error => error.code === 'LOCKED');
+  } finally { sleeper.kill(); await fs.rm(dir, { recursive: true, force: true }); }
+});

@@ -13,7 +13,7 @@ const ACTIVE = new Set(['queued', 'running', 'waiting_for_operator']);
 const now = () => new Date().toISOString();
 const taskName = id => taskCatalog.find(task => task.id === id)?.name || id || 'Legacy execution';
 
-export function runWorker(job, { onEvent, ask }) {
+export function runWorker(job, { onEvent, ask, onSpawn }) {
   return new Promise((resolve, reject) => {
     // A fixed JS entry point, never a shell or user-selected executable. A separate
     // process group lets the server drain on Ctrl+C without interrupting a Save.
@@ -38,6 +38,7 @@ export function runWorker(job, { onEvent, ask }) {
       else if (result && !signal) resolve(result);
       else reject(Object.assign(new Error('The worker stopped unexpectedly. Review checkpoints and verify any attempted changes before retrying.'), { code: 'WORKER_INTERRUPTED' }));
     });
+    Promise.resolve(onSpawn?.(worker.pid)).catch(() => {});
     worker.send({ type: 'start', ...job });
   });
 }
@@ -77,7 +78,7 @@ export class ExecutionManager {
         const execution = { ...metadata, directory, events: metadata.events || [] };
         if (recover && ACTIVE.has(execution.status)) {
           execution.status = 'interrupted'; execution.stage = 'Operator review required'; execution.prompt = null; execution.finishedAt = now();
-          execution.error = { code: 'SERVER_INTERRUPTED', message: 'The server restarted while this execution was active. The worker may still be running. Inspect reports, browser processes and the shared run lock before retrying; no lock was removed.' };
+          execution.error = { code: 'SERVER_INTERRUPTED', message: 'The server restarted while this execution was active. The worker may still be running. Review its report before retrying. If no automation process remains, the next run clears the old lock automatically.' };
           await this.persist(execution);
           await this.audit('execution.recovery_required', { executionId: execution.id });
         }
@@ -165,7 +166,7 @@ export class ExecutionManager {
       }
     }
     let releaseLock;
-    try { releaseLock = await acquireLock(this.stateDir); }
+    try { releaseLock = await acquireLock(this.stateDir, { onStaleCleared: previous => this.audit('lock.stale_cleared', { previousPid: previous.pid, previousWorkerPid: previous.workerPid, previousStartedAt: previous.startedAt }) }); }
     catch (error) { if (error.code === 'LOCKED') throw new HttpError(409, 'LOCKED', error.message); throw error; }
     const id = crypto.randomUUID();
     const execution = { id, taskId: request.taskId, taskName: request.task.name, environment: request.environment, mode: request.mode, input: request.input,
@@ -232,7 +233,7 @@ export class ExecutionManager {
         approvedDeposits = report.results.map(({ username, tenant, rows }) => ({ username, tenant, rows }));
       }
       const result = await this.execute({ taskId: execution.taskId, input, root: this.root, outputDir: execution.directory, settings: { ...this.settings }, ...(approvedDeposits ? { approvedDeposits } : {}) },
-        { onEvent: event => this.event(execution, event), ask: message => this.ask(execution, message) });
+        { onEvent: event => this.event(execution, event), ask: message => this.ask(execution, message), onSpawn: pid => releaseLock.setWorker?.(pid) });
       const report = await readJson(execution.directory, 'report.json');
       execution.status = report ? statusOf(report, result?.exitCode || 0) : 'interrupted';
       if (report?.error) execution.error = safeError(report.error);
