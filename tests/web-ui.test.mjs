@@ -277,7 +277,7 @@ test('browser shows Procare subscriber sync, previews and applies a live-confirm
   await go(page, 'Run task', 'Run an automation');
   await page.getByLabel('Automation', { exact: true }).selectOption('procare-subscriber-synchronization');
   assert.equal(await page.getByLabel('Environment').inputValue(), 'production');
-  assert.match(await page.getByLabel('Environment').locator('option:checked').innerText(), /Live production — North Procare/);
+  assert.match(await page.getByLabel('Environment').locator('option:checked').innerText(), /Live production/);
   await page.getByLabel('Usernames').fill('sync.one\n000123');
   await page.getByRole('button', { name: 'Run preview', exact: true }).click();
   await page.getByRole('button', { name: 'Review & apply', exact: true }).waitFor();

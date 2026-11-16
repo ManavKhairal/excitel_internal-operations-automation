@@ -216,3 +216,26 @@ test('a lock left by a crashed run is cleared automatically, but a live owner or
     await assert.rejects(acquireLock(dir), error => error.code === 'LOCKED');
   } finally { sleeper.kill(); await fs.rm(dir, { recursive: true, force: true }); }
 });
+test('ERP production uses only reviewed production URLs and stops before any browser when they are missing', async () => {
+  const { erpOrigins, APPS } = await import('../src/browser.mjs');
+  const { runTask } = await import('../src/task-runner.mjs');
+  assert.equal(erpOrigins({}), APPS);
+  assert.equal(erpOrigins({ environment: 'staging' }), APPS);
+  assert.throws(() => erpOrigins({ environment: 'production', origins: { procare: 'https://procare.example.in', corehr: null } }), error => error.code === 'PRODUCTION_URL_MISSING' && /CoreHR/.test(error.message));
+  assert.throws(() => erpOrigins({ environment: 'production', origins: { procare: APPS.procare, corehr: 'https://hr.example.in' } }), error => error.code === 'CONFIG' && /staging/.test(error.message));
+  assert.throws(() => erpOrigins({ environment: 'production', origins: { procare: 'http://procare.example.in', corehr: 'https://hr.example.in' } }), error => error.code === 'CONFIG');
+  assert.throws(() => erpOrigins({ environment: 'production', origins: { procare: 'https://procare.example.in/partners', corehr: 'https://hr.example.in' } }), error => error.code === 'CONFIG');
+  assert.throws(() => erpOrigins({ environment: 'qa' }), error => error.code === 'WRONG_ENVIRONMENT');
+  assert.deepEqual({ ...erpOrigins({ environment: 'production', origins: { procare: 'https://procare.example.in/', corehr: 'https://hr.example.in' } }) },
+    { procare: 'https://procare.example.in', corehr: 'https://hr.example.in' });
+  const root = await tempDir();
+  try {
+    await fs.cp(new URL('../config', import.meta.url), path.join(root, 'config'), { recursive: true });
+    const config = JSON.parse(await fs.readFile(path.join(root, 'config', 'production.json'), 'utf8'));
+    config.origins = { procare: null, corehr: null };
+    await fs.writeFile(path.join(root, 'config', 'production.json'), JSON.stringify(config));
+    await assert.rejects(runTask('erp-deactivation', { partner: 'Fixture Partner', environment: 'production' }, { root, lockHeld: true }), error => error.code === 'PRODUCTION_URL_MISSING');
+    await assert.rejects(fs.access(path.join(root, '.state', 'profiles')));
+    await assert.rejects(runTask('erp-deactivation', { partner: 'Fixture Partner', environment: 'qa' }, { root, lockHeld: true }), error => error.code === 'WRONG_ENVIRONMENT');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

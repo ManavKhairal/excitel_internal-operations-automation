@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { APPS, createSession } from './browser.mjs';
+import { erpOrigins, createSession } from './browser.mjs';
 import { collectEmployees } from './procare.mjs';
 import { processEmployee } from './corehr.mjs';
 import { clean, timestamp, safeName, privateDir, writeJson, saveReport, diagnostics, acquireLock, csvCell, StopError } from './utils.mjs';
@@ -41,10 +41,15 @@ export async function runTask(taskId, input, {
 
 async function runErp(input, { root, outputDir: requestedOutput, ask, onEvent, lockHeld, settings }) {
   const args = { ...input, apply: input.apply === true, pagination: input.pagination || 'auto' };
-  if (args.environment !== undefined && args.environment !== 'staging') throw new StopError('WRONG_ENVIRONMENT', 'ERP execution is restricted to staging.');
-  if (!args['login-only'] && !clean(args.partner)) throw new StopError('INPUT', 'Provide --partner "the exact staging partner name". Run npm start -- --help for examples.');
+  const environment = args.environment ?? 'staging';
+  if (!['staging', 'production'].includes(environment)) throw new StopError('WRONG_ENVIRONMENT', 'ERP environment must be staging or production.');
+  delete args.environment;
+  if (!args['login-only'] && !clean(args.partner)) throw new StopError('INPUT', 'Provide --partner "the exact partner name". Run npm start -- --help for examples.');
   if (!['guided', 'auto', 'single'].includes(args.pagination)) throw new StopError('INPUT', '--pagination must be guided, auto or single.');
-  const config = await readConfig(root, 'staging.json', ['timeoutMs', 'searchTimeoutMs', 'resultSettleMs', 'maxEmployees', 'maxPages']);
+  const config = await readConfig(root, `${environment}.json`, ['timeoutMs', 'searchTimeoutMs', 'resultSettleMs', 'maxEmployees', 'maxPages']);
+  config.environment = environment;
+  // Fails before any browser opens if a production URL is missing or invalid.
+  const origins = erpOrigins(config);
   if (typeof settings.screenshots === 'boolean') config.screenshots = settings.screenshots;
   await loadEnvironment(root);
   const stage = async (name, message, currentRecord) => onEvent({ type: 'stage', stage: name, message, ...(currentRecord ? { currentRecord } : {}) });
@@ -54,20 +59,20 @@ async function runErp(input, { root, outputDir: requestedOutput, ask, onEvent, l
   const persist = async () => { await saveReport(outputDir, report); await onEvent({ type: 'checkpoint' }); };
   try {
     if (!lockHeld) releaseLock = await acquireLock(path.join(root, '.state'));
-    console.log(`\nMODE: ${args.apply ? 'APPLY - status saves enabled by --apply' : 'DRY RUN - no status changes'}\nProcare: ${APPS.procare}\nCoreHR: ${APPS.corehr}\n`);
+    console.log(`\nENVIRONMENT: ${environment.toUpperCase()}\nMODE: ${args.apply ? 'APPLY - status saves enabled by --apply' : 'DRY RUN - no status changes'}\nProcare: ${origins.procare}\nCoreHR: ${origins.corehr}\n`);
     if (args['login-only']) {
       for (const kind of ['procare', 'corehr']) {
-        await stage('authenticating', `Opening ${kind} and checking its staging session.`);
+        await stage('authenticating', `Opening ${kind} and checking its ${environment} session.`);
         active = await createSession(kind, config, root, { ask }); sessions.push(active);
         await active.ensureLogin();
         active.assertClear();
-        console.log(`${kind}: staging session saved locally.`);
+        console.log(`${kind}: ${environment} session saved locally.`);
         await active.close(); sessions.pop(); active = null;
       }
     } else {
-      outputDir = requestedOutput || path.join(root, 'output', `${timestamp()}-${safeName(args.partner)}`);
+      outputDir = requestedOutput || path.join(root, 'output', `${timestamp()}-${environment === 'production' ? 'production-' : ''}${safeName(args.partner)}`);
       await privateDir(outputDir);
-      await stage('authenticating', 'Opening Procare and checking its staging session.');
+      await stage('authenticating', `Opening Procare and checking its ${environment} session.`);
       active = await createSession('procare', config, root, { ask }); sessions.push(active);
       await active.ensureLogin();
       await stage('collecting', 'Checking partner eligibility and collecting the current employee list.');
@@ -76,14 +81,14 @@ async function runErp(input, { root, outputDir: requestedOutput, ask, onEvent, l
       // Keep both sessions available for verified logout after the task report.
       active = null;
       report = {
-        environment: 'staging', mode: args.apply ? 'apply' : 'dry-run', partner: manifest.partner,
+        environment, mode: args.apply ? 'apply' : 'dry-run', partner: manifest.partner,
         collectedAt: manifest.collectedAt, startedAt: new Date().toISOString(), finishedAt: null,
         status: 'IN_PROGRESS',
         results: manifest.usernames.map(username => ({ username, outcome: 'NOT_PROCESSED', message: 'Not started.' }))
       };
       await persist();
-      if (args.apply) console.log(`\nApplying staging status changes for ${manifest.usernames.length} employee usernames for ${manifest.partner.name}.\nAlready-inactive users will be skipped.\n`);
-      await stage('authenticating', 'Opening CoreHR and checking its staging session.');
+      if (args.apply) console.log(`\nApplying ${environment} status changes for ${manifest.usernames.length} employee usernames for ${manifest.partner.name}.\nAlready-inactive users will be skipped.\n`);
+      await stage('authenticating', `Opening CoreHR and checking its ${environment} session.`);
       active = await createSession('corehr', config, root, { ask }); sessions.push(active);
       await active.ensureLogin();
       let halted = false;

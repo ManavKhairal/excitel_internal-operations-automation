@@ -10,12 +10,12 @@ export const taskRegistry = Object.freeze({
 export const taskCatalog = Object.freeze([
   {
     id: 'erp-deactivation', name: 'ERP employee deactivation',
-    description: 'Collect the current employees of an eligible partner in Procare, then preview or verify staging CoreHR deactivations.',
-    applications: ['Procare', 'CoreHR'], environments: ['staging'], modes: ['preview', 'apply'],
-    availability: 'Staging only. Manual SSO or MFA may require the operator in the opened browser.',
+    description: 'Collect the current employees of an eligible partner in Procare, then preview or verify CoreHR deactivations.',
+    applications: ['Procare', 'CoreHR'], environments: ['staging', 'production'], modes: ['preview', 'apply'],
+    availability: 'Staging by default. Production deactivates real CoreHR employees after preview and confirmation. Manual SSO or MFA may require the operator in the opened browser.',
     inputs: [
       { name: 'partner', label: 'Exact partner name', type: 'text', required: true, maxLength: 200,
-        placeholder: 'Enter the exact staging partner name', help: 'The partner must be Terminated or Inactive.' },
+        placeholder: 'Enter the exact partner name', help: 'The partner must be Terminated or Inactive.' },
       { name: 'pagination', label: 'Employee collection', type: 'select', required: true,
         defaultValue: 'auto', options: [{ value: 'auto', label: 'All pages automatically' }],
         help: 'The complete list is recollected on every run. Guided pagination remains available through the CLI.' }

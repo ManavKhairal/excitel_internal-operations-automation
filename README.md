@@ -31,6 +31,17 @@ For branch creation, merging, and rollbacks, see [branching and recovery](docs/b
 
 ## ERP employee deactivation
 
+### Production
+
+Staging remains the default. To run against production:
+
+1. Put the production addresses in `config/production.json` under `origins.procare` and `origins.corehr` (for example `https://procare.example.in`, no path). Runs stop before opening a browser while either is missing or points at staging.
+2. Put `PROCARE_PROD_USERNAME`, `PROCARE_PROD_PASSWORD`, `COREHR_PROD_USERNAME` and `COREHR_PROD_PASSWORD` in the local `.env`. Staging credentials are never used for production.
+3. CLI: `npm run login -- --environment production`, then `npm start -- --environment production --partner "PARTNER"` to preview, adding `--apply` to save.
+4. Dashboard: choose **ERP employee deactivation** and environment **Live production**, run a preview, then **Confirm production deactivation**.
+
+Production uses separate browser profiles (`.state/profiles/production-*`), the production Auth0 origin `https://excitel.eu.auth0.com`, and the same partner-status, exact-username, single-save and verified-logout checks as staging. Reports record `environment: production`.
+
 A local Node.js + Playwright project for the workflow you described:
 
 1. Open staging Procare, authenticate, select Partners and search an exact partner name. Eligible partner statuses are **Terminated** and **Inactive**; Active and other statuses are rejected by the status check.

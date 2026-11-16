@@ -32,7 +32,7 @@ for (const scenario of [
         import path from 'node:path';
         import { testBrowser, procareFixture, corehrFixture } from ${JSON.stringify(fixturesUrl)};
         export const APPS = ${JSON.stringify(APPS)};
-        export { assertStagingPage } from ${JSON.stringify(new URL('../src/browser.mjs', import.meta.url).href)};
+        export { assertStagingPage, appOrigin, erpOrigins } from ${JSON.stringify(new URL('../src/browser.mjs', import.meta.url).href)};
         export async function createSession(kind, config, root) {
           const browser = await testBrowser();
           const fixture = kind === 'procare'

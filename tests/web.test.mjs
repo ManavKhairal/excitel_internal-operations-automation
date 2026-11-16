@@ -43,8 +43,8 @@ test('task discovery is registry-driven, settings expose safe supported values a
   assert.equal(tasks.status, 200);
   assert.deepEqual(tasks.data.tasks, taskCatalog);
   assert.deepEqual(tasks.data.tasks.map(task => task.id).sort(), ['deposit-refundability', 'erp-deactivation', 'procare-subscriber-synchronization', 'workforce-access']);
-  // Only the North Procare synchronization task is exposed against production.
-  assert.deepEqual(tasks.data.tasks.filter(task => task.environments.includes('production')).map(task => task.id), ['procare-subscriber-synchronization']);
+  // Only ERP deactivation and North Procare synchronization are exposed against production.
+  assert.deepEqual(tasks.data.tasks.filter(task => task.environments.includes('production')).map(task => task.id), ['erp-deactivation', 'procare-subscriber-synchronization']);
   assert.deepEqual((await app.request('/api/executions')).data.executions, []);
   const settings = (await app.request('/api/settings')).data.settings;
   assert.equal(settings.productionEnabled, true); assert.equal(settings.depositManualEnabled, true); assert.equal(settings.concurrency, 1); assert.equal(settings.host, '127.0.0.1');
@@ -60,7 +60,7 @@ test('input validation rejects arbitrary tasks, environments, URLs, commands and
   let dispatched = 0;
   const app = await startDashboard({ execute: async (...args) => { dispatched++; return fixtureExecutor(...args); } }); t.after(() => app.dispose());
   const cases = [
-    { taskId: 'shell' }, { environment: 'production' }, { mode: 'execute' }, { idempotencyKey: 'short' },
+    { taskId: 'shell' }, { environment: 'production-manual' }, { environment: 'qa' }, { mode: 'execute' }, { idempotencyKey: 'short' },
     { input: { partner: '' } }, { input: { partner: '<script>' } }, { input: { partner: 'fixture', pagination: 'guided' } },
     { input: { partner: 'fixture', url: 'https://production.invalid' } }, { command: 'echo bad' }, { input: [] },
     { taskId: 'deposit-refundability', environment: 'offline-demo', input: { usernames: [] } },
@@ -479,4 +479,16 @@ test('a lock left by a closed dashboard is cleared and audited so the next previ
   assert.equal((await app.finish(created.data.execution.id)).status, 'succeeded');
   const audit = await fs.readFile(path.join(root, '.state', 'dashboard-audit.jsonl'), 'utf8');
   assert.match(audit, /"action":"lock.stale_cleared"/);
+});
+
+test('ERP accepts an explicit production environment and shows production readiness in settings', async t => {
+  const app = await startDashboard(); t.after(() => app.dispose());
+  const created = await app.request('/api/executions', { method: 'POST', body: requestBody({ environment: 'production' }) });
+  assert.equal(created.status, 202, created.text);
+  assert.equal(created.data.execution.environment, 'production');
+  await app.finish(created.data.execution.id);
+  assert.equal((await app.request('/api/executions', { method: 'POST', body: requestBody({ environment: 'offline-demo' }) })).status, 400);
+  const settings = (await app.request('/api/settings')).data.settings;
+  assert.ok(settings.applications.some(item => item.name === 'CoreHR (ERP)' && item.environment === 'production'));
+  assert.ok(settings.applications.some(item => item.name === 'CoreHR (ERP)' && item.environment === 'staging' && item.available));
 });

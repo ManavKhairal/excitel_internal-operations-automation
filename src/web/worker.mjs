@@ -36,7 +36,7 @@ async function ask(message) {
 function webInput(taskId, input) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.apply !== 'boolean') throw new StopError('INPUT', 'The worker requires validated task input.');
   if (taskId === 'erp-deactivation') {
-    if (input.environment !== 'staging') throw new StopError('WRONG_ENVIRONMENT', 'ERP execution is restricted to staging.');
+    if (!['staging', 'production'].includes(input.environment)) throw new StopError('WRONG_ENVIRONMENT', 'ERP execution runs only in staging or production.');
     if (typeof input.partner !== 'string' || !input.partner.trim() || input.partner.length > 200 || /[\u0000-\u001f<>]/.test(input.partner)) throw new StopError('INPUT', 'Provide an exact valid staging partner name.');
     if (input.pagination !== 'auto') throw new StopError('INPUT', 'The dashboard uses automatic employee collection.');
     if (Object.keys(input).some(key => !['partner', 'pagination', 'apply', 'environment'].includes(key))) throw new StopError('INPUT', 'Unsupported ERP worker input.');

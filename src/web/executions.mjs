@@ -274,9 +274,14 @@ export class ExecutionManager {
   }
   async getSettings() {
     const applications = [];
-    for (const name of ['procare', 'corehr']) {
-      const prepared = await fs.stat(path.join(this.stateDir, 'profiles', name)).then(stat => stat.isDirectory(), () => false);
-      applications.push({ name: name === 'corehr' ? 'CoreHR' : 'Procare', environment: 'staging', available: true, session: prepared ? 'saved' : 'not_prepared' });
+    const production = await readJson(path.join(this.root, 'config'), 'production.json');
+    const productionReady = ['procare', 'corehr'].every(kind => typeof production?.origins?.[kind] === 'string' && production.origins[kind]);
+    for (const environment of ['staging', 'production']) {
+      for (const name of ['procare', 'corehr']) {
+        const profile = environment === 'production' ? `production-${name}` : name;
+        const prepared = await fs.stat(path.join(this.stateDir, 'profiles', profile)).then(stat => stat.isDirectory(), () => false);
+        applications.push({ name: `${name === 'corehr' ? 'CoreHR' : 'Procare'} (ERP)`, environment, available: environment === 'staging' || productionReady, session: prepared ? 'saved' : 'not_prepared' });
+      }
     }
     applications.push({ name: 'Deposit database & Google Sheets', environment: 'offline-demo', available: true, session: 'not_prepared' });
     applications.push({ name: 'Deposit database (manual usernames, no Sheets)', environment: 'production-manual', available: true, session: 'fresh_per_run' });

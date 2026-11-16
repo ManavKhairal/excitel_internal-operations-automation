@@ -1,4 +1,4 @@
-import { APPS, assertStagingPage } from './browser.mjs';
+import { appOrigin, assertStagingPage } from './browser.mjs';
 import { StopError, clean, exactPattern, uniqueVisible, visibleItems, validUsername, disabled, waitFor, sleep, hash } from './utils.mjs';
 
 const headerKey = text => clean(text).toLowerCase().replace(/[\s_-]+/g, '');
@@ -133,10 +133,10 @@ export async function collectEmployees(session, partnerName, config, { paginatio
   const href = await link.getAttribute('href');
   const url = new URL(href, page.url());
   const match = url.pathname.match(/^\/partner\/([^/]+)\/employee\/?$/);
-  if (url.origin !== APPS.procare || !match) throw new StopError('PARTNER_URL', 'The Employees link does not match the supplied staging /partner/<id>/employee route. Inspect it before continuing.');
+  if (url.origin !== appOrigin(page, 'procare') || !match) throw new StopError('PARTNER_URL', 'The Employees link does not match the expected /partner/<id>/employee route. Inspect it before continuing.');
   const partnerId = decodeURIComponent(match[1]);
   await link.click();
-  await page.waitForURL(u => u.origin === APPS.procare && u.pathname === url.pathname, { timeout: config.timeoutMs });
+  await page.waitForURL(u => u.origin === appOrigin(page, 'procare') && u.pathname === url.pathname, { timeout: config.timeoutMs });
   console.log(`\nSelected partner: ${partnerName}\nPartner ID: ${partnerId}`);
   const collectionUrl = page.url();
   const seenPages = new Set();
@@ -190,7 +190,7 @@ export async function collectEmployees(session, partnerName, config, { paginatio
     if (answer !== `COLLECT ${usernames.length}`) throw new StopError('CANCELLED', 'Employee-list confirmation was not supplied.');
   } else throw new StopError('CONFIRMATION_REQUIRED', 'A human confirmation of this partner batch is required in version 1.');
   return {
-    schemaVersion: 1, environment: 'staging', collectedAt: new Date().toISOString(),
+    schemaVersion: 1, environment: config.environment || 'staging', collectedAt: new Date().toISOString(),
     partner: { name: partnerName, id: partnerId, employeeUrl: collectionUrl },
     usernames, pageCounts, paginationMode: pagination,
     completeness: pagination === 'auto' ? 'pagination-verified' : 'operator-confirmed', datasetHash: hash({ partnerId, usernames })
