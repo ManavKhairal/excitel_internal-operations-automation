@@ -275,13 +275,15 @@ export class ExecutionManager {
   async getSettings() {
     const applications = [];
     const production = await readJson(path.join(this.root, 'config'), 'production.json');
-    const productionReady = ['procare', 'corehr'].every(kind => typeof production?.origins?.[kind] === 'string' && production.origins[kind]);
-    for (const environment of ['staging', 'production']) {
-      for (const name of ['procare', 'corehr']) {
-        const profile = environment === 'production' ? `production-${name}` : name;
-        const prepared = await fs.stat(path.join(this.stateDir, 'profiles', profile)).then(stat => stat.isDirectory(), () => false);
-        applications.push({ name: `${name === 'corehr' ? 'CoreHR' : 'Procare'} (ERP)`, environment, available: environment === 'staging' || productionReady, session: prepared ? 'saved' : 'not_prepared' });
-      }
+    const filled = value => typeof value === 'string' && value.trim() !== '';
+    for (const [name, label, profile, ready] of [
+      ['procare', 'Procare (ERP)', 'procare', true], ['corehr', 'CoreHR (ERP)', 'corehr', true],
+      ['procare', 'Procare North (ERP)', 'production-procare-north', filled(production?.origins?.procare?.north)],
+      ['procare', 'Procare South (ERP)', 'production-procare-south', filled(production?.origins?.procare?.south)],
+      ['corehr', 'CoreHR (ERP)', 'production-corehr', filled(production?.origins?.corehr)]
+    ]) {
+      const prepared = await fs.stat(path.join(this.stateDir, 'profiles', profile)).then(stat => stat.isDirectory(), () => false);
+      applications.push({ name: label, environment: profile.startsWith('production-') ? 'production' : 'staging', available: ready, session: prepared ? 'saved' : 'not_prepared' });
     }
     applications.push({ name: 'Deposit database & Google Sheets', environment: 'offline-demo', available: true, session: 'not_prepared' });
     applications.push({ name: 'Deposit database (manual usernames, no Sheets)', environment: 'production-manual', available: true, session: 'fresh_per_run' });

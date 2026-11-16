@@ -1,8 +1,11 @@
 {
   "environment": "production",
   "origins": {
-    "procare": null,
-    "corehr": null
+    "procare": {
+      "north": "",
+      "south": ""
+    },
+    "corehr": ""
   },
   "timeoutMs": 20000,
   "searchTimeoutMs": 15000,

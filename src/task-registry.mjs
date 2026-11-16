@@ -16,6 +16,9 @@ export const taskCatalog = Object.freeze([
     inputs: [
       { name: 'partner', label: 'Exact partner name', type: 'text', required: true, maxLength: 200,
         placeholder: 'Enter the exact partner name', help: 'The partner must be Terminated or Inactive.' },
+      { name: 'tenant', label: 'Procare tenant', type: 'select', required: false, defaultValue: '',
+        options: [{ value: '', label: 'Staging (North pre-release)' }, { value: 'north', label: 'North' }, { value: 'south', label: 'South' }],
+        help: 'Required for Live production: the Procare tenant that holds this partner. CoreHR has one tenant. Leave as Staging for staging runs.' },
       { name: 'pagination', label: 'Employee collection', type: 'select', required: true,
         defaultValue: 'auto', options: [{ value: 'auto', label: 'All pages automatically' }],
         help: 'The complete list is recollected on every run. Guided pagination remains available through the CLI.' }

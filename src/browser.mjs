@@ -9,6 +9,7 @@ export const APPS = Object.freeze({
   corehr: 'https://staging-hr.excitel.in'
 });
 export const ERP_ENVIRONMENTS = Object.freeze(['staging', 'production']);
+export const ERP_TENANTS = Object.freeze(['north', 'south']);
 const APP_NAMES = { procare: 'Procare', corehr: 'CoreHR' };
 
 // Returns the exact application origins for the configured ERP environment.
@@ -16,16 +17,20 @@ export function erpOrigins(config = {}) {
   const environment = config.environment || 'staging';
   if (environment === 'staging') return APPS;
   if (environment !== 'production') throw new StopError('WRONG_ENVIRONMENT', 'ERP environment must be staging or production.');
+  // Procare production has a North and a South tenant; CoreHR has a single tenant.
+  const tenant = config.tenant;
+  if (!ERP_TENANTS.includes(tenant)) throw new StopError('TENANT_REQUIRED', 'Choose the North or South Procare tenant for a production run.');
   const origins = {};
   for (const kind of ['procare', 'corehr']) {
-    const value = config.origins?.[kind];
-    if (!value) throw new StopError('PRODUCTION_URL_MISSING', `Add the production ${APP_NAMES[kind]} URL to config/production.json under origins.${kind}.`);
+    const key = kind === 'procare' ? `procare.${tenant}` : 'corehr';
+    const value = kind === 'procare' ? config.origins?.procare?.[tenant] : config.origins?.corehr;
+    if (!value) throw new StopError('PRODUCTION_URL_MISSING', `Add the production ${kind === 'procare' ? `${tenant === 'north' ? 'North' : 'South'} ` : ''}${APP_NAMES[kind]} URL to config/production.json under origins.${key}.`);
     let url;
-    try { url = new URL(value); } catch { throw new StopError('CONFIG', `origins.${kind} in config/production.json is not a valid URL.`); }
+    try { url = new URL(value); } catch { throw new StopError('CONFIG', `origins.${key} in config/production.json is not a valid URL.`); }
     if (url.protocol !== 'https:' || url.username || url.password || !['', '/'].includes(url.pathname) || url.search || url.hash) {
-      throw new StopError('CONFIG', `origins.${kind} must be an HTTPS address such as https://example.excitel.in, without a path.`);
+      throw new StopError('CONFIG', `origins.${key} must be an HTTPS address such as https://example.excitel.in, without a path.`);
     }
-    if (Object.values(APPS).includes(url.origin)) throw new StopError('CONFIG', `origins.${kind} points to a staging application. Use the production URL.`);
+    if (Object.values(APPS).includes(url.origin)) throw new StopError('CONFIG', `origins.${key} points to a staging application. Use the production URL.`);
     origins[kind] = url.origin;
   }
   return Object.freeze(origins);
@@ -98,7 +103,9 @@ export async function createSession(kind, config, root, { headless = false, ask 
   const origins = erpOrigins(config);
   const home = origins[kind];
   // Production keeps its own browser profile so staging and production sessions never mix.
-  const profile = path.join(root, '.state', 'profiles', environment === 'production' ? `production-${kind}` : kind);
+  // Each production Procare tenant also gets its own profile.
+  const profileName = environment !== 'production' ? kind : kind === 'procare' ? `production-procare-${config.tenant}` : 'production-corehr';
+  const profile = path.join(root, '.state', 'profiles', profileName);
   await privateDir(profile);
   const navigationOrigins = new Set([home, ...exactOrigins(app.additionalNavigationOrigins)]);
   const writeOrigins = new Set([home, ...exactOrigins(app.additionalWriteOrigins)]);
@@ -152,8 +159,8 @@ export async function createSession(kind, config, root, { headless = false, ask 
     try { await uniqueVisible(session.readyLocator(), `${kind} sidebar`, 4000); return; }
     catch (error) { if (error.code === 'AMBIGUOUS_CONTROL') throw error; }
     session.assertClear();
-    // Production uses separate credentials: PROCARE_PROD_* and COREHR_PROD_*.
-    const prefix = environment === 'production' ? `${kind.toUpperCase()}_PROD` : kind.toUpperCase();
+    // Production uses separate credentials: PROCARE_PROD_NORTH_*, PROCARE_PROD_SOUTH_* and COREHR_PROD_*.
+    const prefix = environment !== 'production' ? kind.toUpperCase() : kind === 'procare' ? `PROCARE_PROD_${config.tenant.toUpperCase()}` : 'COREHR_PROD';
     const username = process.env[`${prefix}_USERNAME`];
     const password = process.env[`${prefix}_PASSWORD`];
     if ((username || password) && !await ready()) {
@@ -171,7 +178,7 @@ export async function createSession(kind, config, root, { headless = false, ask 
       catch (error) { if (error.code === 'AMBIGUOUS_CONTROL') throw error; }
     }
     session.assertClear();
-    if (headless || !ask) throw new StopError('LOGIN_REQUIRED', `${kind}: log in once with npm run login${environment === 'production' ? ' -- --environment production' : ''} in headed mode. Session/MFA may need renewal.`);
+    if (headless || !ask) throw new StopError('LOGIN_REQUIRED', `${kind}: log in once with npm run login${environment === 'production' ? ` -- --environment production --tenant ${config.tenant}` : ''} in headed mode. Session/MFA may need renewal.`);
     console.log(`\nLog in to ${kind.toUpperCase()} in the opened browser. Use your ${environment.toUpperCase()} credentials and complete any SSO/MFA normally.`);
     await ask(`When the correct ${environment} application and its sidebar are visible, press Enter: `);
     session.assertClear();

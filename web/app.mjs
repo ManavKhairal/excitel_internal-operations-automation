@@ -151,6 +151,11 @@ function renderRun(id) {
     const updateTenant = () => { form.elements.tenant.required = form.elements.environment.value === 'production-manual'; };
     form.elements.environment.addEventListener('change', updateTenant); updateTenant();
   }
+  if (task.id === 'erp-deactivation') {
+    // Production must name the Procare tenant; staging has no tenant choice.
+    const updateTenant = () => { const production = form.elements.environment.value === 'production'; form.elements.tenant.required = production; if (!production) form.elements.tenant.value = ''; form.elements.tenant.disabled = !production; };
+    form.elements.environment.addEventListener('change', updateTenant); updateTenant();
+  }
   form.addEventListener('input', () => { idempotencyKey = crypto.randomUUID(); });
   const direct = () => form.elements.runMode?.value === 'direct';
   if (task.directApply) {

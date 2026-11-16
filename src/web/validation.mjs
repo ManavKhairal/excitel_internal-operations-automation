@@ -16,10 +16,14 @@ export function validateRequest(body, maxUsers = 20) {
   assertObject(body.input, 'Task inputs');
   let input;
   if (task.id === 'erp-deactivation') {
-    onlyKeys(body.input, ['partner', 'pagination']);
+    onlyKeys(body.input, ['partner', 'pagination', 'tenant']);
+    const tenant = body.input.tenant || undefined;
+    if (tenant !== undefined && !['north', 'south'].includes(tenant)) throw new HttpError(400, 'INVALID_TENANT', 'Choose the North or South Procare tenant.');
+    if (body.environment === 'production' && !tenant) throw new HttpError(400, 'TENANT_REQUIRED', 'Choose the North or South Procare tenant for a production run.');
+    if (body.environment === 'staging' && tenant) throw new HttpError(400, 'INVALID_TENANT', 'Staging uses the North pre-release Procare. Leave the tenant as Staging.');
     if (typeof body.input.partner !== 'string' || !body.input.partner.trim() || body.input.partner.length > 200 || /[\u0000-\u001f<>]/.test(body.input.partner)) throw new HttpError(400, 'INVALID_PARTNER', 'Enter an exact partner name (1–200 characters).');
     if (body.input.pagination !== undefined && body.input.pagination !== 'auto') throw new HttpError(400, 'INVALID_PAGINATION', 'The dashboard supports automatic pagination. Use the CLI for guided collection.');
-    input = { partner: body.input.partner.replace(/\s+/g, ' ').trim(), pagination: 'auto' };
+    input = { partner: body.input.partner.replace(/\s+/g, ' ').trim(), pagination: 'auto', ...(tenant ? { tenant } : {}) };
   } else if (task.id === 'deposit-refundability') {
     onlyKeys(body.input, ['usernames', 'tenant', 'refundable']);
     if (!Array.isArray(body.input.usernames) || body.input.usernames.some(value => typeof value !== 'string')) throw new HttpError(400, 'INVALID_USERNAMES', 'Provide a list of usernames.');

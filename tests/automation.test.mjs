@@ -216,26 +216,34 @@ test('a lock left by a crashed run is cleared automatically, but a live owner or
     await assert.rejects(acquireLock(dir), error => error.code === 'LOCKED');
   } finally { sleeper.kill(); await fs.rm(dir, { recursive: true, force: true }); }
 });
-test('ERP production uses only reviewed production URLs and stops before any browser when they are missing', async () => {
+test('ERP production uses only reviewed tenant URLs and stops before any browser when they are missing', async () => {
   const { erpOrigins, APPS } = await import('../src/browser.mjs');
   const { runTask } = await import('../src/task-runner.mjs');
+  const prod = (procare, corehr = 'https://hr.example.in', tenant = 'north') => ({ environment: 'production', tenant, origins: { procare, corehr } });
+  const both = { north: 'https://procare-north.example.in', south: 'https://procare-south.example.in/' };
   assert.equal(erpOrigins({}), APPS);
   assert.equal(erpOrigins({ environment: 'staging' }), APPS);
-  assert.throws(() => erpOrigins({ environment: 'production', origins: { procare: 'https://procare.example.in', corehr: null } }), error => error.code === 'PRODUCTION_URL_MISSING' && /CoreHR/.test(error.message));
-  assert.throws(() => erpOrigins({ environment: 'production', origins: { procare: APPS.procare, corehr: 'https://hr.example.in' } }), error => error.code === 'CONFIG' && /staging/.test(error.message));
-  assert.throws(() => erpOrigins({ environment: 'production', origins: { procare: 'http://procare.example.in', corehr: 'https://hr.example.in' } }), error => error.code === 'CONFIG');
-  assert.throws(() => erpOrigins({ environment: 'production', origins: { procare: 'https://procare.example.in/partners', corehr: 'https://hr.example.in' } }), error => error.code === 'CONFIG');
+  assert.deepEqual({ ...erpOrigins(prod(both)) }, { procare: 'https://procare-north.example.in', corehr: 'https://hr.example.in' });
+  assert.deepEqual({ ...erpOrigins(prod(both, undefined, 'south')) }, { procare: 'https://procare-south.example.in', corehr: 'https://hr.example.in' });
+  assert.throws(() => erpOrigins({ ...prod(both), tenant: undefined }), error => error.code === 'TENANT_REQUIRED');
+  assert.throws(() => erpOrigins(prod({ north: both.north, south: '' }, undefined, 'south')), error => error.code === 'PRODUCTION_URL_MISSING' && /South Procare/.test(error.message) && /origins\.procare\.south/.test(error.message));
+  assert.throws(() => erpOrigins(prod(both, '')), error => error.code === 'PRODUCTION_URL_MISSING' && /CoreHR/.test(error.message));
+  assert.throws(() => erpOrigins(prod({ north: APPS.procare })), error => error.code === 'CONFIG' && /staging/.test(error.message));
+  assert.throws(() => erpOrigins(prod({ north: 'http://procare.example.in' })), error => error.code === 'CONFIG');
+  assert.throws(() => erpOrigins(prod({ north: 'https://procare.example.in/partners' })), error => error.code === 'CONFIG');
   assert.throws(() => erpOrigins({ environment: 'qa' }), error => error.code === 'WRONG_ENVIRONMENT');
-  assert.deepEqual({ ...erpOrigins({ environment: 'production', origins: { procare: 'https://procare.example.in/', corehr: 'https://hr.example.in' } }) },
-    { procare: 'https://procare.example.in', corehr: 'https://hr.example.in' });
   const root = await tempDir();
   try {
     await fs.cp(new URL('../config', import.meta.url), path.join(root, 'config'), { recursive: true });
     const config = JSON.parse(await fs.readFile(path.join(root, 'config', 'production.json'), 'utf8'));
-    config.origins = { procare: null, corehr: null };
+    config.origins = { procare: { north: '', south: '' }, corehr: '' };
     await fs.writeFile(path.join(root, 'config', 'production.json'), JSON.stringify(config));
-    await assert.rejects(runTask('erp-deactivation', { partner: 'Fixture Partner', environment: 'production' }, { root, lockHeld: true }), error => error.code === 'PRODUCTION_URL_MISSING');
+    const run = input => runTask('erp-deactivation', { partner: 'Fixture Partner', ...input }, { root, lockHeld: true });
+    await assert.rejects(run({ environment: 'production' }), error => error.code === 'TENANT_REQUIRED');
+    await assert.rejects(run({ environment: 'production', tenant: 'east' }), error => error.code === 'TENANT_REQUIRED');
+    await assert.rejects(run({ environment: 'production', tenant: 'south' }), error => error.code === 'PRODUCTION_URL_MISSING');
+    await assert.rejects(run({ environment: 'staging', tenant: 'south' }), error => error.code === 'WRONG_ENVIRONMENT');
     await assert.rejects(fs.access(path.join(root, '.state', 'profiles')));
-    await assert.rejects(runTask('erp-deactivation', { partner: 'Fixture Partner', environment: 'qa' }, { root, lockHeld: true }), error => error.code === 'WRONG_ENVIRONMENT');
+    await assert.rejects(run({ environment: 'qa' }), error => error.code === 'WRONG_ENVIRONMENT');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

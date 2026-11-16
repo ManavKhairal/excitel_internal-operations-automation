@@ -43,11 +43,15 @@ async function runErp(input, { root, outputDir: requestedOutput, ask, onEvent, l
   const args = { ...input, apply: input.apply === true, pagination: input.pagination || 'auto' };
   const environment = args.environment ?? 'staging';
   if (!['staging', 'production'].includes(environment)) throw new StopError('WRONG_ENVIRONMENT', 'ERP environment must be staging or production.');
-  delete args.environment;
+  const tenant = args.tenant || undefined;
+  if (environment === 'production' && !['north', 'south'].includes(tenant)) throw new StopError('TENANT_REQUIRED', 'Production ERP runs need --tenant north or --tenant south (the Procare tenant).');
+  if (environment === 'staging' && tenant !== undefined && tenant !== 'north') throw new StopError('WRONG_ENVIRONMENT', 'Staging ERP uses the North pre-release Procare only. Omit the tenant for staging.');
+  delete args.environment; delete args.tenant;
   if (!args['login-only'] && !clean(args.partner)) throw new StopError('INPUT', 'Provide --partner "the exact partner name". Run npm start -- --help for examples.');
   if (!['guided', 'auto', 'single'].includes(args.pagination)) throw new StopError('INPUT', '--pagination must be guided, auto or single.');
   const config = await readConfig(root, `${environment}.json`, ['timeoutMs', 'searchTimeoutMs', 'resultSettleMs', 'maxEmployees', 'maxPages']);
   config.environment = environment;
+  if (environment === 'production') config.tenant = tenant;
   // Fails before any browser opens if a production URL is missing or invalid.
   const origins = erpOrigins(config);
   if (typeof settings.screenshots === 'boolean') config.screenshots = settings.screenshots;
@@ -59,7 +63,7 @@ async function runErp(input, { root, outputDir: requestedOutput, ask, onEvent, l
   const persist = async () => { await saveReport(outputDir, report); await onEvent({ type: 'checkpoint' }); };
   try {
     if (!lockHeld) releaseLock = await acquireLock(path.join(root, '.state'));
-    console.log(`\nENVIRONMENT: ${environment.toUpperCase()}\nMODE: ${args.apply ? 'APPLY - status saves enabled by --apply' : 'DRY RUN - no status changes'}\nProcare: ${origins.procare}\nCoreHR: ${origins.corehr}\n`);
+    console.log(`\nENVIRONMENT: ${environment.toUpperCase()}${tenant && environment === 'production' ? ` (${tenant.toUpperCase()} Procare)` : ''}\nMODE: ${args.apply ? 'APPLY - status saves enabled by --apply' : 'DRY RUN - no status changes'}\nProcare: ${origins.procare}\nCoreHR: ${origins.corehr}\n`);
     if (args['login-only']) {
       for (const kind of ['procare', 'corehr']) {
         await stage('authenticating', `Opening ${kind} and checking its ${environment} session.`);
@@ -70,7 +74,7 @@ async function runErp(input, { root, outputDir: requestedOutput, ask, onEvent, l
         await active.close(); sessions.pop(); active = null;
       }
     } else {
-      outputDir = requestedOutput || path.join(root, 'output', `${timestamp()}-${environment === 'production' ? 'production-' : ''}${safeName(args.partner)}`);
+      outputDir = requestedOutput || path.join(root, 'output', `${timestamp()}-${environment === 'production' ? `production-${tenant}-` : ''}${safeName(args.partner)}`);
       await privateDir(outputDir);
       await stage('authenticating', `Opening Procare and checking its ${environment} session.`);
       active = await createSession('procare', config, root, { ask }); sessions.push(active);
@@ -81,7 +85,7 @@ async function runErp(input, { root, outputDir: requestedOutput, ask, onEvent, l
       // Keep both sessions available for verified logout after the task report.
       active = null;
       report = {
-        environment, mode: args.apply ? 'apply' : 'dry-run', partner: manifest.partner,
+        environment, ...(environment === 'production' ? { tenant } : {}), mode: args.apply ? 'apply' : 'dry-run', partner: manifest.partner,
         collectedAt: manifest.collectedAt, startedAt: new Date().toISOString(), finishedAt: null,
         status: 'IN_PROGRESS',
         results: manifest.usernames.map(username => ({ username, outcome: 'NOT_PROCESSED', message: 'Not started.' }))

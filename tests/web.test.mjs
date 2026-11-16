@@ -481,14 +481,20 @@ test('a lock left by a closed dashboard is cleared and audited so the next previ
   assert.match(audit, /"action":"lock.stale_cleared"/);
 });
 
-test('ERP accepts an explicit production environment and shows production readiness in settings', async t => {
+test('ERP production requires a Procare tenant and shows per-tenant readiness in settings', async t => {
   const app = await startDashboard(); t.after(() => app.dispose());
-  const created = await app.request('/api/executions', { method: 'POST', body: requestBody({ environment: 'production' }) });
+  const partner = { partner: 'Fixture Partner', pagination: 'auto' };
+  for (const [environment, input, code] of [['production', partner, 'TENANT_REQUIRED'], ['production', { ...partner, tenant: 'east' }, 'INVALID_TENANT'], ['staging', { ...partner, tenant: 'south' }, 'INVALID_TENANT']]) {
+    const rejected = await app.request('/api/executions', { method: 'POST', body: requestBody({ environment, input }) });
+    assert.equal(rejected.status, 400, rejected.text); assert.equal(rejected.data.error.code, code);
+  }
+  const created = await app.request('/api/executions', { method: 'POST', body: requestBody({ environment: 'production', input: { ...partner, tenant: 'south' } }) });
   assert.equal(created.status, 202, created.text);
   assert.equal(created.data.execution.environment, 'production');
+  assert.equal(created.data.execution.input.tenant, 'south');
   await app.finish(created.data.execution.id);
   assert.equal((await app.request('/api/executions', { method: 'POST', body: requestBody({ environment: 'offline-demo' }) })).status, 400);
   const settings = (await app.request('/api/settings')).data.settings;
-  assert.ok(settings.applications.some(item => item.name === 'CoreHR (ERP)' && item.environment === 'production'));
+  assert.ok(['Procare North (ERP)', 'Procare South (ERP)', 'CoreHR (ERP)'].every(name => settings.applications.some(item => item.name === name && item.environment === 'production')));
   assert.ok(settings.applications.some(item => item.name === 'CoreHR (ERP)' && item.environment === 'staging' && item.available));
 });

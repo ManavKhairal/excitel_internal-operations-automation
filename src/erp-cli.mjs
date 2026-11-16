@@ -8,7 +8,7 @@ import { runTask } from './task-runner.mjs';
 export async function main(argv = process.argv.slice(2)) {
   const { values: args } = parseArgs({ args: argv, options: {
     partner: { type: 'string' }, apply: { type: 'boolean', default: false },
-    pagination: { type: 'string', default: 'auto' }, environment: { type: 'string', default: 'staging' },
+    pagination: { type: 'string', default: 'auto' }, environment: { type: 'string', default: 'staging' }, tenant: { type: 'string' },
     'login-only': { type: 'boolean', default: false }, help: { type: 'boolean', default: false }
   }, strict: true });
   if (args.help) {
@@ -18,10 +18,11 @@ npm start -- --partner "EXACT STAGING PARTNER NAME"
 npm start -- --partner "EXACT STAGING PARTNER NAME" --apply
 npm start -- --task erp-deactivation --partner "EXACT STAGING PARTNER NAME"
 
-Production (URLs in config/production.json, PROCARE_PROD_* / COREHR_PROD_* in .env):
-npm run login -- --environment production
-npm start -- --environment production --partner "EXACT PRODUCTION PARTNER NAME"
-npm start -- --environment production --partner "EXACT PRODUCTION PARTNER NAME" --apply
+Production (URLs in config/production.json, credentials in .env). Procare has
+North and South tenants; CoreHR has one. --tenant selects the Procare tenant:
+npm run login -- --environment production --tenant north
+npm start -- --environment production --tenant north --partner "EXACT PRODUCTION PARTNER NAME"
+npm start -- --environment production --tenant south --partner "EXACT PRODUCTION PARTNER NAME" --apply
 
 npm start -- --task deposit-refundability --help
 npm start -- --task workforce-access --help
@@ -29,6 +30,7 @@ npm start -- --task procare-subscriber-synchronization --help
 
 Default is DRY RUN. Employee collection and pagination are automatic.
 --environment staging|production  Default staging. Production changes real CoreHR employees.
+--tenant north|south Required for production: which Procare tenant holds the partner.
 --apply              Save status changes without an extra confirmation prompt.
 --pagination auto    Collect all pages using the configured Procare pager (default).
 --pagination guided  Inspect each page manually and confirm the collected list.
