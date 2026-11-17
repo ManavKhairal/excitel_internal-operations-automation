@@ -2,10 +2,10 @@
   "environment": "production",
   "origins": {
     "procare": {
-      "north": "",
-      "south": ""
+      "north": "https://procare-del.north.excitel.in/",
+      "south": "https://procare-hyd.west.excitel.in/"
     },
-    "corehr": ""
+    "corehr": "https://hr.excitel.in/"
   },
   "timeoutMs": 20000,
   "searchTimeoutMs": 15000,
