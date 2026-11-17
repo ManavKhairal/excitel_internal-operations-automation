@@ -7,6 +7,7 @@ import { acquireLock, hash, privateDir, writeJson, timestamp } from '../utils.mj
 import { taskCatalog } from '../task-registry.mjs';
 import { validateRequest } from './validation.mjs';
 import { HttpError, onlyKeys, privateStorage, redact, safeError } from './security.mjs';
+import { workerEnvironment } from './dotenv.mjs';
 import { artifactsOf, cleanupOf, progressOf, readArtifact, readJson, recordsOf, sanitizeReport, statusOf } from './reports.mjs';
 
 const ACTIVE = new Set(['queued', 'running', 'waiting_for_operator']);
@@ -17,7 +18,7 @@ export function runWorker(job, { onEvent, ask, onSpawn }) {
   return new Promise((resolve, reject) => {
     // A fixed JS entry point, never a shell or user-selected executable. A separate
     // process group lets the server drain on Ctrl+C without interrupting a Save.
-    const worker = fork(fileURLToPath(new URL('./worker.mjs', import.meta.url)), [], { detached: true, execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    const worker = fork(fileURLToPath(new URL('./worker.mjs', import.meta.url)), [], { detached: true, execArgv: [], env: workerEnvironment(), stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     let result, failure, events = Promise.resolve();
     worker.on('message', message => {
       if (message.type === 'event') events = events.then(() => onEvent(message.event)).catch(error => { failure ||= error; });

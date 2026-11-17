@@ -1,3 +1,4 @@
+import { currentFileSecrets } from './dotenv.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -23,8 +24,8 @@ export function equalSecret(left, right) {
 // API responses and downloads. Browser diagnostics and profile files are excluded.
 export function redact(value) {
   let text = String(value ?? '');
-  const secrets = Object.entries(process.env).filter(([key, secret]) => /PASSWORD|TOKEN|SECRET|API_KEY|COOKIE/i.test(key) && secret)
-    .map(([, secret]) => secret).sort((left, right) => right.length - left.length);
+  const secrets = [...new Set([...Object.entries(process.env).filter(([key, secret]) => /PASSWORD|TOKEN|SECRET|API_KEY|COOKIE/i.test(key) && secret)
+    .map(([, secret]) => secret), ...currentFileSecrets()])].sort((left, right) => right.length - left.length);
   for (const secret of secrets) text = text.split(secret).join('[REDACTED]');
   return text
     .replace(/\b(?:Bearer|Basic)\s+[a-zA-Z0-9+/_.=-]+/gi, '[REDACTED]')

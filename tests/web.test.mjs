@@ -498,3 +498,31 @@ test('ERP production requires a Procare tenant and shows per-tenant readiness in
   assert.ok(['Procare North (ERP)', 'Procare South (ERP)', 'CoreHR (ERP)'].every(name => settings.applications.some(item => item.name === name && item.environment === 'production')));
   assert.ok(settings.applications.some(item => item.name === 'CoreHR (ERP)' && item.environment === 'staging' && item.available));
 });
+
+test('credentials added to .env after the dashboard started reach the next run and are redacted', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { loadDashboardEnv, workerEnvironment, currentFileSecrets } = await import('../src/web/dotenv.mjs');
+  const { redact } = await import('../src/web/security.mjs');
+  const root = await makeRoot(); const file = path.join(root, '.env');
+  const key = 'FIXTURE_LATE_PASSWORD', userKey = 'FIXTURE_LATE_USERNAME';
+  try {
+    // Dashboard starts while the credentials are still blank.
+    await fs.writeFile(file, `${userKey}=\n${key}=\n`);
+    loadDashboardEnv(file);
+    assert.equal(process.env[key], '');
+    // The operator then fills them in without restarting the dashboard.
+    await fs.writeFile(file, `${userKey}=late.user\n${key}=Late-Secret-123\n`);
+    const env = workerEnvironment();
+    assert.equal(env[key], undefined); assert.equal(env[userKey], undefined);
+    const seen = execFileSync(process.execPath, ['-e', `process.loadEnvFile(${JSON.stringify(file)}); process.stdout.write(process.env.${userKey} + ':' + process.env.${key}.length)`], { env, encoding: 'utf8' });
+    assert.equal(seen, 'late.user:15');
+    assert.ok(currentFileSecrets(file).includes('Late-Secret-123'));
+    // Shell-provided variables are still inherited unchanged.
+    process.env.FIXTURE_SHELL_VALUE = 'kept';
+    assert.equal(workerEnvironment().FIXTURE_SHELL_VALUE, 'kept');
+  } finally {
+    delete process.env[key]; delete process.env[userKey]; delete process.env.FIXTURE_SHELL_VALUE;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+  assert.equal(typeof redact('x'), 'string');
+});

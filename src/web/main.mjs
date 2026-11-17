@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { createDashboardServer, projectRoot } from './server.mjs';
+import { loadDashboardEnv } from './dotenv.mjs';
 
 try {
-  try { process.loadEnvFile(path.join(projectRoot, '.env')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  loadDashboardEnv(path.join(projectRoot, '.env'));
   const port = Number(process.env.DASHBOARD_PORT || 4310);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('DASHBOARD_PORT must be an integer between 1024 and 65535.');
   const app = await createDashboardServer();
