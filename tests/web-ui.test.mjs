@@ -278,6 +278,7 @@ test('browser shows Procare subscriber sync, previews and applies a live-confirm
   await page.getByLabel('Automation', { exact: true }).selectOption('procare-subscriber-synchronization');
   assert.equal(await page.getByLabel('Environment').inputValue(), 'production');
   assert.match(await page.getByLabel('Environment').locator('option:checked').innerText(), /Live production/);
+  await page.getByLabel('Procare tenant').selectOption('north');
   await page.getByLabel('Usernames').fill('sync.one\n000123');
   await page.getByRole('button', { name: 'Run preview', exact: true }).click();
   await page.getByRole('button', { name: 'Review & apply', exact: true }).waitFor();
@@ -302,6 +303,7 @@ test('browser Run now option skips preview after explicit confirmation for Proca
   assert.equal(await page.getByLabel('Run mode').count(), 0);
   await page.getByLabel('Automation', { exact: true }).selectOption('procare-subscriber-synchronization');
   assert.equal(await page.getByLabel('Run mode').inputValue(), 'preview');
+  await page.getByLabel('Procare tenant').selectOption('north');
   await page.getByLabel('Usernames').fill('sync.one\n000123');
   await page.getByLabel('Run mode').selectOption('direct');
   await page.getByRole('button', { name: 'Run now', exact: true }).click();

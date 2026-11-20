@@ -59,9 +59,10 @@ function webInput(taskId, input) {
     return input;
   }
   if (taskId === 'procare-subscriber-synchronization') {
-    if (input.environment !== 'production') throw new StopError('WRONG_ENVIRONMENT', 'Subscriber synchronization runs only against North production Procare.');
+    if (input.environment !== 'production') throw new StopError('WRONG_ENVIRONMENT', 'Subscriber synchronization runs only against production Procare.');
     if (!Array.isArray(input.usernames) || input.usernames.some(username => typeof username !== 'string')) throw new StopError('INPUT', 'Subscriber synchronization requires exact usernames.');
-    if (Object.keys(input).some(key => !['usernames', 'apply', 'environment'].includes(key))) throw new StopError('INPUT', 'Unsupported synchronization worker input.');
+    if (input.tenant !== undefined && !['north', 'south'].includes(input.tenant)) throw new StopError('INPUT', 'Invalid Procare tenant.');
+    if (Object.keys(input).some(key => !['usernames', 'apply', 'environment', 'tenant'].includes(key))) throw new StopError('INPUT', 'Unsupported synchronization worker input.');
     return input;
   }
   throw new StopError('UNKNOWN_TASK', 'Unknown automation task.');

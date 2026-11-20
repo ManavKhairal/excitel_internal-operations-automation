@@ -1,9 +1,10 @@
 import { chromium } from 'playwright';
 import { StopError, clean, disabled, exactPattern, uniqueVisible, waitFor, safeUrl, screenshot } from '../utils.mjs';
 
-export const PROCARE_SYNC = Object.freeze({ origin: 'https://procare-del.north.excitel.in', auth: 'https://excitel.eu.auth0.com', apiPrefix: '/api/index_dev.php/', syncRoute: 'synchronization/syncSubscriber' });
+export const PROCARE_SYNC = Object.freeze({ origin: 'https://procare-del.north.excitel.in',
+  origins: Object.freeze({ north: 'https://procare-del.north.excitel.in', south: 'https://procare-hyd.west.excitel.in' }), auth: 'https://excitel.eu.auth0.com', apiPrefix: '/api/index_dev.php/', syncRoute: 'synchronization/syncSubscriber' });
 export function validateSyncConfig(config) {
-  if (config.environment !== 'production' || config.tenant !== 'north' || config.origin !== PROCARE_SYNC.origin || config.authOrigin !== PROCARE_SYNC.auth || config.apiPrefix !== PROCARE_SYNC.apiPrefix) throw new StopError('SYNC_ENVIRONMENT', 'Subscriber synchronization is configured only for the approved North production Procare application.');
+  if (config.environment !== 'production' || !Object.hasOwn(PROCARE_SYNC.origins, config.tenant) || config.origin !== PROCARE_SYNC.origins[config.tenant] || config.authOrigin !== PROCARE_SYNC.auth || config.apiPrefix !== PROCARE_SYNC.apiPrefix) throw new StopError('SYNC_ENVIRONMENT', 'Subscriber synchronization is configured only for the approved North or South production Procare application.');
   for (const key of ['timeoutMs', 'maxUsers']) if (!Number.isInteger(config[key]) || config[key] < 1) throw new StopError('CONFIG', `Invalid ${key}.`);
   if (typeof config.headless !== 'boolean' || typeof config.liveUiReviewed !== 'boolean' || !Array.isArray(config.readRoutes)) throw new StopError('CONFIG', 'Invalid synchronization browser or reviewed route configuration.');
 }
@@ -15,8 +16,8 @@ export function subscriberIdentity(record, username) {
   const subscriberErpId = record.subscriberErpId !== undefined && record.subscriberErpId !== null ? String(record.subscriberErpId).trim() : '';
   return { username: record.username, subscriberId: String(record.subscriberId), subscriberErpId };
 }
-export function matchesSyncRequest(url, method, expected) {
-  if (!expected || method !== 'GET' || url.origin !== PROCARE_SYNC.origin || url.pathname !== PROCARE_SYNC.apiPrefix + PROCARE_SYNC.syncRoute) return false;
+export function matchesSyncRequest(url, method, expected, origin = PROCARE_SYNC.origin) {
+  if (!expected || method !== 'GET' || url.origin !== origin || url.pathname !== PROCARE_SYNC.apiPrefix + PROCARE_SYNC.syncRoute) return false;
   const entries = [...url.searchParams];
   return entries.length === 3 && ['username', 'subscriberId', 'subscriberErpId'].every(key => url.searchParams.getAll(key).length === 1 && url.searchParams.get(key) === expected[key]);
 }
@@ -31,13 +32,14 @@ const equalIdentity = (left, right) => left.subscriberId === right.subscriberId 
 export class ProcareSyncSession {
   constructor(page, browser, config, credentials, { apply = false, directory } = {}) {
     Object.assign(this, { page, browser, config, credentials, apply, directory });
+    this.origin = PROCARE_SYNC.origins[config.tenant] || PROCARE_SYNC.origin;
     this.audit = []; this.blocked = []; this.armed = null; this.used = new Set(); this.phase = 'login';
   }
   assertClear() { if (this.blocked.length) throw new StopError('BLOCKED_REQUEST', 'An unexpected request or dialog was blocked. Review the private report before continuing.'); }
-  assertApp() { this.assertClear(); if (new URL(this.page.url()).origin !== PROCARE_SYNC.origin) throw new StopError('WRONG_APPLICATION', 'Expected North production Procare.'); }
+  assertApp() { this.assertClear(); if (new URL(this.page.url()).origin !== this.origin) throw new StopError('WRONG_APPLICATION', `Expected ${this.config.tenant === 'south' ? 'South' : 'North'} production Procare.`); }
   isResponse(response, route, subscriberId) {
     const url = new URL(response.url());
-    return url.origin === PROCARE_SYNC.origin && url.pathname === PROCARE_SYNC.apiPrefix + route && (!subscriberId || requestParams(response.request()).get('subscriberId') === subscriberId);
+    return url.origin === this.origin && url.pathname === PROCARE_SYNC.apiPrefix + route && (!subscriberId || requestParams(response.request()).get('subscriberId') === subscriberId);
   }
   responseFor(route, subscriberId) {
     const promise = this.page.waitForResponse(response => this.isResponse(response, route, subscriberId), { timeout: this.config.timeoutMs });
@@ -48,11 +50,11 @@ export class ProcareSyncSession {
     return readProcareResult(await response.json());
   }
   async ensureLogin() {
-    await this.page.goto(PROCARE_SYNC.origin + '/', { waitUntil: 'domcontentloaded' });
+    await this.page.goto(this.origin + '/', { waitUntil: 'domcontentloaded' });
     await waitFor(async () => await this.page.locator('a[href="/subscriber"]').isVisible() || await this.page.locator('input[name="password"]').isVisible(), { timeoutMs: this.config.timeoutMs, description: 'production Procare login or sidebar' });
     if (!await this.page.locator('a[href="/subscriber"]').isVisible()) {
       if (new URL(this.page.url()).origin !== PROCARE_SYNC.auth) throw new StopError('LOGIN_ORIGIN', 'Production credentials may only be entered on the reviewed Procare sign-in origin.');
-      if (!this.credentials.username || !this.credentials.password) throw new StopError('LOGIN_CONFIG', 'Fill PROCARE_SYNC_USERNAME and PROCARE_SYNC_PASSWORD in the local .env.');
+      if (!this.credentials.username || !this.credentials.password) throw new StopError('LOGIN_CONFIG', `Fill PROCARE_PROD_${String(this.config.tenant).toUpperCase()}_USERNAME and PROCARE_PROD_${String(this.config.tenant).toUpperCase()}_PASSWORD in the local .env.`);
       await (await uniqueVisible(this.page.locator('input[name="username"]'), 'production username', this.config.timeoutMs)).fill(this.credentials.username);
       await (await uniqueVisible(this.page.locator('input[name="password"]'), 'production password', this.config.timeoutMs)).fill(this.credentials.password);
       await (await uniqueVisible(this.page.locator('button[name="submit"]'), 'production login', this.config.timeoutMs)).click();
@@ -140,13 +142,13 @@ export class ProcareSyncSession {
     const login = async () => new URL(this.page.url()).origin === PROCARE_SYNC.auth && await this.page.locator('input[name="password"]').isVisible();
     const already = await login();
     if (!already) {
-      if (new URL(this.page.url()).origin !== PROCARE_SYNC.origin) throw new StopError('LOGOUT_ORIGIN', 'Unexpected application during logout.');
+      if (new URL(this.page.url()).origin !== this.origin) throw new StopError('LOGOUT_ORIGIN', 'Unexpected application during logout.');
       const control = this.page.locator('.profile .dropdown a:has(i.fa-sign-out)');
       if (!await control.isVisible()) await (await uniqueVisible(this.page.locator('.profile.cpointer'), 'profile menu', this.config.timeoutMs)).click();
       await (await uniqueVisible(control, 'Procare logout', this.config.timeoutMs)).click();
     }
     await waitFor(login, { timeoutMs: this.config.timeoutMs, description: 'logged-out production login form' });
-    await this.page.goto(PROCARE_SYNC.origin + '/', { waitUntil: 'domcontentloaded' });
+    await this.page.goto(this.origin + '/', { waitUntil: 'domcontentloaded' });
     await waitFor(login, { timeoutMs: this.config.timeoutMs, description: 'login required after reopening Procare' });
     return already ? 'ALREADY_SIGNED_OUT' : 'SIGNED_OUT_VERIFIED';
   }
@@ -166,11 +168,11 @@ export async function installSyncGuard(context, session) {
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
     const block = async reason => { session.blocked.push({ method: req.method(), url: safeUrl(url.href), reason }); return route.abort(); };
-    if (url.origin === PROCARE_SYNC.origin && url.pathname.startsWith(PROCARE_SYNC.apiPrefix)) {
+    if (url.origin === session.origin && url.pathname.startsWith(PROCARE_SYNC.apiPrefix)) {
       const endpoint = url.pathname.slice(PROCARE_SYNC.apiPrefix.length);
       if (endpoint === PROCARE_SYNC.syncRoute) {
         const armed = session.armed; session.armed = null;
-        if (!session.apply || !session.config.liveUiReviewed || !armed || !matchesSyncRequest(url, req.method(), armed.expected) || session.used.has(armed.expected.subscriberId)) return block('Synchronization outside the exact armed subscriber scope or a repeated request');
+        if (!session.apply || !session.config.liveUiReviewed || !armed || !matchesSyncRequest(url, req.method(), armed.expected, session.origin) || session.used.has(armed.expected.subscriberId)) return block('Synchronization outside the exact armed subscriber scope or a repeated request');
         session.used.add(armed.expected.subscriberId);
         const audit = { ...armed.expected, dispatchedAt: new Date().toISOString() };
         session.audit.push(audit);
@@ -182,9 +184,9 @@ export async function installSyncGuard(context, session) {
       if (req.method() === 'OPTIONS') return route.fallback();
       return block('Unreviewed Procare API route');
     }
-    if (url.origin === PROCARE_SYNC.origin && url.pathname.startsWith('/api/')) return block('Unreviewed Procare API prefix');
+    if (url.origin === session.origin && url.pathname.startsWith('/api/')) return block('Unreviewed Procare API prefix');
     if (url.origin === PROCARE_SYNC.auth) return route.fallback();
-    if (url.origin === PROCARE_SYNC.origin && ['GET', 'HEAD', 'OPTIONS'].includes(req.method())) return route.fallback();
+    if (url.origin === session.origin && ['GET', 'HEAD', 'OPTIONS'].includes(req.method())) return route.fallback();
     if (staticOrigins.has(url.origin) && ['GET', 'HEAD', 'OPTIONS'].includes(req.method())) return route.fallback();
     if (['image', 'font', 'stylesheet'].includes(req.resourceType()) || ['https://dc.services.visualstudio.com', 'https://api.mixpanel.com'].includes(url.origin)) return route.abort();
     return block('Unapproved external request');

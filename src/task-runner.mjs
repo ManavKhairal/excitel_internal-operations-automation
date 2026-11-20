@@ -317,32 +317,38 @@ export async function saveSyncReport(directory, report) {
     [fields.join(','), ...report.results.map(result => fields.map(field => csvCell(field === 'message' ? result.error?.message : result[field])).join(','))].join('\n') + '\n', { mode: 0o600 });
 }
 
-// Dashboard path for North production Procare subscriber synchronization.
+// Dashboard path for North or South production Procare subscriber synchronization.
 // The CLI keeps its own sheet/workbook entry point in subscriber-sync-cli.mjs.
 async function runProcareSync(input, { root, outputDir, onEvent, lockHeld, settings, openSyncSession }) {
   const { validateSyncInput, runSubscriberSync, dashboardSyncSnapshot } = await import('./tasks/procare-subscriber-synchronization.mjs');
-  const { validateSyncConfig, createProcareSyncSession } = await import('./integrations/procare-subscriber-sync.mjs');
+  const { validateSyncConfig, createProcareSyncSession, PROCARE_SYNC } = await import('./integrations/procare-subscriber-sync.mjs');
   const config = await readConfig(root, 'procare-subscriber-synchronization.json', ['timeoutMs', 'maxUsers']);
+  if (input.environment !== undefined && input.environment !== 'production') throw new StopError('WRONG_ENVIRONMENT', 'Subscriber synchronization runs only against production Procare.');
+  if (Object.keys(input).some(key => !['usernames', 'apply', 'environment', 'tenant'].includes(key))) throw new StopError('INPUT', 'Unsupported synchronization input.');
+  const tenant = input.tenant ?? 'north';
+  if (!Object.hasOwn(PROCARE_SYNC.origins, tenant)) throw new StopError('INPUT', 'Choose the North or South Procare tenant.');
+  Object.assign(config, { tenant, origin: PROCARE_SYNC.origins[tenant] });
   validateSyncConfig(config);
-  if (input.environment !== undefined && input.environment !== 'production') throw new StopError('WRONG_ENVIRONMENT', 'Subscriber synchronization runs only against North production Procare.');
-  if (Object.keys(input).some(key => !['usernames', 'apply', 'environment'].includes(key))) throw new StopError('INPUT', 'Unsupported synchronization input.');
+  const tenantName = tenant === 'south' ? 'South' : 'North';
   const apply = input.apply === true;
-  const snapshot = dashboardSyncSnapshot(input.usernames);
+  const snapshot = dashboardSyncSnapshot(input.usernames, undefined, tenant);
   const request = validateSyncInput(snapshot, config.maxUsers);
   if (apply && !config.liveUiReviewed) throw new StopError('SYNC_UI_NOT_REVIEWED', 'Production synchronization awaits the first reviewed preview.');
   if (typeof settings.screenshots === 'boolean') config.screenshots = settings.screenshots;
   await loadEnvironment(root);
-  const credentials = { username: process.env.PROCARE_SYNC_USERNAME, password: process.env.PROCARE_SYNC_PASSWORD };
-  if (!openSyncSession && (!credentials.username || !credentials.password)) throw new StopError('LOGIN_CONFIG', 'Fill PROCARE_SYNC_USERNAME and PROCARE_SYNC_PASSWORD in the local .env, then restart the dashboard run.');
+  // The production Procare login is shared with the ERP flow; PROCARE_SYNC_* overrides it when set.
+  const prefix = `PROCARE_PROD_${tenant.toUpperCase()}`;
+  const credentials = { username: process.env.PROCARE_SYNC_USERNAME || process.env[`${prefix}_USERNAME`], password: process.env.PROCARE_SYNC_PASSWORD || process.env[`${prefix}_PASSWORD`] };
+  if (!openSyncSession && (!credentials.username || !credentials.password)) throw new StopError('LOGIN_CONFIG', `Fill ${prefix}_USERNAME and ${prefix}_PASSWORD in the local .env.`);
   const releaseLock = lockHeld ? null : await acquireLock(path.join(root, '.state'));
   const directory = outputDir || path.join(root, 'output', `${timestamp()}-procare-sync-${safeName(request.usernames[0])}`);
   const stage = (name, message, currentRecord) => onEvent({ type: 'stage', stage: name, message, ...(currentRecord ? { currentRecord } : {}) });
   try {
     await privateDir(directory);
-    console.log(`MODE: ${apply ? 'APPLY' : 'PREVIEW'} — ${request.usernames.length} unique North subscriber(s).`);
+    console.log(`MODE: ${apply ? 'APPLY' : 'PREVIEW'} — ${request.usernames.length} unique ${tenantName} subscriber(s).`);
     // Wrap session operations to emit genuine stages without changing the workflow.
     const openSession = async () => {
-      await stage('authenticating', 'Opening North production Procare and signing in.');
+      await stage('authenticating', `Opening ${tenantName} production Procare and signing in.`);
       const session = openSyncSession ? await openSyncSession() : await createProcareSyncSession(config, credentials, { apply, directory });
       // Every call keeps the real session as `this`, so its request guard state is unchanged.
       return {

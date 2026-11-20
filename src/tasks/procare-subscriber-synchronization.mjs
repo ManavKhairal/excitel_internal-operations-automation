@@ -9,12 +9,12 @@ export function validateSyncInput(snapshot, maxUsers = 500) {
     ? typeof source.path === 'string' && source.path.endsWith('.xlsx') && /^[a-f0-9]{64}$/.test(source.sha256 || '')
     : source?.kind === 'dashboard' ? true
     : /^[A-Za-z0-9_-]+$/.test(source?.spreadsheetId || '');
-  if (!snapshot || snapshot.tenant !== 'north' || !snapshot.source ||
+  if (!snapshot || !['north', 'south'].includes(snapshot.tenant) || !snapshot.source ||
       !recognizedSource ||
       typeof snapshot.source.tab !== 'string' || !snapshot.source.tab.trim() ||
       !/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/.test(snapshot.source.range || '') ||
       !Number.isFinite(Date.parse(snapshot.source.checkedAt))) {
-    throw new StopError('SHEET_INPUT', 'Provide a North sheet snapshot with source identity, tab, bounded range, checkedAt and usernames.');
+    throw new StopError('SHEET_INPUT', 'Provide a North or South sheet snapshot with source identity, tab, bounded range, checkedAt and usernames.');
   }
   if (!Array.isArray(snapshot.usernames) || !snapshot.usernames.length || snapshot.usernames.length > maxUsers) {
     throw new StopError('SHEET_INPUT', `The selected sheet range must contain 1–${maxUsers} usernames. Split larger batches explicitly.`);
@@ -23,21 +23,21 @@ export function validateSyncInput(snapshot, maxUsers = 500) {
     if (typeof value !== 'string') throw new StopError('SHEET_INPUT', 'Sheet usernames must be strings so case and leading zeroes are preserved.');
     return validUsername(value);
   }))];
-  return { tenant: 'north', source: { ...snapshot.source }, usernames, inputHash: hash(usernames) };
+  return { tenant: snapshot.tenant, source: { ...snapshot.source }, usernames, inputHash: hash(usernames) };
 }
 
 // Usernames pasted into the local dashboard. The operator's list is the source;
 // there is no sheet to refresh or update.
-export function dashboardSyncSnapshot(usernames, checkedAt = new Date().toISOString()) {
+export function dashboardSyncSnapshot(usernames, checkedAt = new Date().toISOString(), tenant = 'north') {
   const count = Array.isArray(usernames) ? Math.max(usernames.length, 1) : 1;
-  return { tenant: 'north', source: { kind: 'dashboard', tab: 'Dashboard input', range: `A1:A${count}`, checkedAt }, usernames };
+  return { tenant, source: { kind: 'dashboard', tab: 'Dashboard input', range: `A1:A${count}`, checkedAt }, usernames };
 }
 
 export async function runSubscriberSync(input, { config, apply = false, openSession, checkpoint = async () => {}, now = () => new Date().toISOString() }) {
   const request = validateSyncInput(input, config.maxUsers);
   const report = {
     schemaVersion: 1, task: 'procare-subscriber-synchronization', executionId: randomUUID(),
-    environment: config.environment, tenant: 'north', mode: apply ? 'apply' : 'preview',
+    environment: config.environment, tenant: request.tenant, mode: apply ? 'apply' : 'preview',
     source: request.source, inputHash: request.inputHash, startedAt: now(), status: 'IN_PROGRESS',
     results: request.usernames.map(username => ({ username, outcome: 'NOT_PROCESSED', syncAttempted: false, requestDispatched: false })),
     cleanup: { logout: 'NOT_REQUIRED', browser: 'NOT_OPENED' }

@@ -42,11 +42,12 @@ export function validateRequest(body, maxUsers = 20) {
       input = { usernames: valid.usernames, tenant: body.input.tenant, action: valid.action };
     } catch (error) { throw new HttpError(400, error.code || 'INVALID_INPUT', error.message); }
   } else if (task.id === 'procare-subscriber-synchronization') {
-    onlyKeys(body.input, ['usernames']);
+    onlyKeys(body.input, ['usernames', 'tenant']);
+    if (!['north', 'south'].includes(body.input.tenant)) throw new HttpError(400, 'TENANT_REQUIRED', 'Choose the North or South Procare tenant.');
     if (!Array.isArray(body.input.usernames) || body.input.usernames.some(value => typeof value !== 'string')) throw new HttpError(400, 'INVALID_USERNAMES', 'Provide a list of exact usernames.');
     try {
-      const valid = validateSyncInput(dashboardSyncSnapshot(body.input.usernames), PROCARE_DASHBOARD_MAX_USERS);
-      input = { usernames: valid.usernames };
+      const valid = validateSyncInput(dashboardSyncSnapshot(body.input.usernames, undefined, body.input.tenant), PROCARE_DASHBOARD_MAX_USERS);
+      input = { usernames: valid.usernames, tenant: body.input.tenant };
     } catch (error) {
       throw new HttpError(400, error.code === 'SHEET_INPUT' ? 'INVALID_USERNAMES' : error.code || 'INVALID_INPUT',
         error.code === 'SHEET_INPUT' ? `Provide 1–${PROCARE_DASHBOARD_MAX_USERS} exact usernames. Use the CLI --workbook option for larger batches.` : error.message);

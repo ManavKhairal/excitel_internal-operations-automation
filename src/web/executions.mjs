@@ -97,7 +97,7 @@ export class ExecutionManager {
           usernames: [...new Set(report?.results?.map(row => row.username).filter(Boolean) || [])],
           tenant: [...new Set(report?.results?.map(row => row.tenant).filter(Boolean) || [])].length === 2 ? 'both' : report?.results?.[0]?.tenant || '',
           action: report?.action || 'grant'
-        } : taskId === 'procare-subscriber-synchronization' ? { usernames: report?.results?.map(row => row.username).filter(Boolean) || [] }
+        } : taskId === 'procare-subscriber-synchronization' ? { usernames: report?.results?.map(row => row.username).filter(Boolean) || [], tenant: report?.tenant || 'north' }
         : { usernames: report?.results?.map(row => row.username).filter(Boolean) || [], refundable: report?.targetRefundable ?? 1 };
       this.executions.set(id, { id, directory, taskId, taskName: taskName(taskId), input, environment: report?.environment || 'unknown',
         mode: report?.mode === 'apply' ? 'apply' : 'preview', status: report ? statusOf(report) : 'failed', source: 'cli',

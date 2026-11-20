@@ -58,14 +58,17 @@ export const taskCatalog = Object.freeze([
   },
   {
     id: 'procare-subscriber-synchronization', name: 'Procare subscriber synchronization',
-    description: 'Find exact subscribers in North production Procare, preview them, then press Synchronize once per subscriber and verify the response.',
+    description: 'Find exact subscribers in North or South production Procare, preview them, then press Synchronize once per subscriber and verify the response.',
     applications: ['Procare'], environments: ['production'], modes: ['preview', 'apply'],
     // The operator may skip preview and confirm a direct apply for this task only.
     directApply: true,
-    availability: 'North production only. Preview opens each subscriber without synchronizing. Apply sends real synchronization requests after confirmation. Choose Run now to skip the preview.',
+    availability: 'Production North or South. Preview opens each subscriber without synchronizing. Apply sends real synchronization requests after confirmation. Choose Run now to skip the preview.',
     inputs: [
+      { name: 'tenant', label: 'Procare tenant', type: 'select', required: true, defaultValue: '',
+        options: [{ value: '', label: 'Select tenant' }, { value: 'north', label: 'North' }, { value: 'south', label: 'South' }],
+        help: 'The Procare tenant that holds these subscribers. Uses the PROCARE_PROD_NORTH/SOUTH login from .env.' },
       { name: 'usernames', label: 'Usernames', type: 'textarea', required: true, maxLength: 10000,
-        placeholder: 'One exact username per line', help: 'Up to 100 exact North subscriber usernames. Case and leading zeroes are preserved. Use the CLI --workbook option for Excel batches.' }
+        placeholder: 'One exact username per line', help: 'Up to 100 exact subscriber usernames for the selected tenant. Case and leading zeroes are preserved. Use the CLI --workbook option for Excel batches.' }
     ]
   }
 ]);

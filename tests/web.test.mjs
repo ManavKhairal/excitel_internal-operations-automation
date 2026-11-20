@@ -405,17 +405,18 @@ test('Procare subscriber synchronization validates dashboard input, previews wit
   const app = await startDashboard({ execute: async (job, callbacks) => { const result = await procareSyncWebExecutor(browser, job, callbacks); syncEvents.push(...result.events); return { exitCode: result.exitCode }; } });
   t.after(() => app.dispose());
   for (const [body, code] of [
-    [{ taskId: 'procare-subscriber-synchronization', environment: 'staging', input: { usernames: ['sync.one'] } }, 'ENVIRONMENT_DISABLED'],
-    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: [] } }, 'INVALID_USERNAMES'],
-    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: Array.from({ length: 101 }, (_, i) => `user${i}`) } }, 'INVALID_USERNAMES'],
-    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: ['sync.one'], workbook: '/etc/passwd' } }, null],
-    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: [42] } }, 'INVALID_USERNAMES']
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'staging', input: { tenant: 'north', usernames: ['sync.one'] } }, 'ENVIRONMENT_DISABLED'],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: ['sync.one'] } }, 'TENANT_REQUIRED'],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { tenant: 'north', usernames: [] } }, 'INVALID_USERNAMES'],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { tenant: 'north', usernames: Array.from({ length: 101 }, (_, i) => `user${i}`) } }, 'INVALID_USERNAMES'],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { tenant: 'north', usernames: ['sync.one'], workbook: '/etc/passwd' } }, null],
+    [{ taskId: 'procare-subscriber-synchronization', environment: 'production', input: { tenant: 'north', usernames: [42] } }, 'INVALID_USERNAMES']
   ]) {
     const response = await app.request('/api/executions', { method: 'POST', body: requestBody(body) });
     assert.equal(response.status, 400, response.text);
     if (code) assert.equal(response.data.error.code, code);
   }
-  const input = { usernames: ['sync.one', '000123', 'sync.one'] };
+  const input = { tenant: 'north', usernames: ['sync.one', '000123', 'sync.one'] };
   const preview = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', input }) });
   assert.equal(preview.status, 202, preview.text);
   assert.deepEqual(preview.data.execution.input.usernames, ['sync.one', '000123']);
@@ -425,7 +426,7 @@ test('Procare subscriber synchronization validates dashboard input, previews wit
   assert.deepEqual(reviewed.records.map(row => row.outcome), ['WOULD_SYNCHRONIZE', 'WOULD_SYNCHRONIZE']);
   assert.equal(syncEvents.filter(event => event.action === 'synchronize').length, 0);
   assert.equal(reviewed.cleanup.results[0].outcome, 'SIGNED_OUT_VERIFIED');
-  const apply = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', mode: 'apply', input: { usernames: ['sync.one', '000123'] }, previewId: reviewed.id, confirmed: true }) });
+  const apply = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', mode: 'apply', input: { tenant: 'north', usernames: ['sync.one', '000123'] }, previewId: reviewed.id, confirmed: true }) });
   assert.equal(apply.status, 202, apply.text);
   const done = await app.finish(apply.data.execution.id, { timeout: 15000 });
   assert.equal(done.status, 'succeeded', JSON.stringify(done.error));
@@ -435,7 +436,7 @@ test('Procare subscriber synchronization validates dashboard input, previews wit
   assert.equal(done.progress.completed, 2); assert.equal(done.progress.failed, 0);
   assert.ok(done.events.some(event => event.stage === 'saving' && event.currentRecord === '000123'));
   assert.equal((await app.request(done.artifacts.find(item => item.name === 'report.csv').url)).status, 200);
-  const reused = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', mode: 'apply', input: { usernames: ['sync.one', '000123'] }, previewId: reviewed.id, confirmed: true }) });
+  const reused = await app.request('/api/executions', { method: 'POST', body: requestBody({ taskId: 'procare-subscriber-synchronization', environment: 'production', mode: 'apply', input: { tenant: 'north', usernames: ['sync.one', '000123'] }, previewId: reviewed.id, confirmed: true }) });
   assert.equal(reused.status, 409);
 });
 
@@ -444,14 +445,14 @@ test('direct apply skips preview only for opted-in tasks and still requires expl
   const syncEvents = [];
   const app = await startDashboard({ execute: async (job, callbacks) => { const result = await procareSyncWebExecutor(browser, job, callbacks); syncEvents.push(...result.events); return { exitCode: result.exitCode }; } });
   t.after(() => app.dispose());
-  const sync = { taskId: 'procare-subscriber-synchronization', environment: 'production', input: { usernames: ['sync.one', '000123'] } };
+  const sync = { taskId: 'procare-subscriber-synchronization', environment: 'production', input: { tenant: 'north', usernames: ['sync.one', '000123'] } };
   for (const [body, code] of [
     [{ ...sync, mode: 'apply', direct: true }, 'CONFIRMATION_REQUIRED'],
     [{ ...sync, mode: 'apply', direct: true, confirmed: true, previewId: 'any-preview' }, 'CONFIRMATION_REQUIRED'],
     [{ ...sync, mode: 'preview', direct: true }, 'DIRECT_APPLY_UNAVAILABLE'],
     [{ ...sync, mode: 'apply', direct: 'yes', confirmed: true }, 'DIRECT_APPLY_UNAVAILABLE'],
-    [{ taskId: 'workforce-access', environment: 'staging', mode: 'apply', direct: true, confirmed: true, input: { usernames: ['new.agent1'], tenant: 'both', action: 'grant' } }, 'DIRECT_APPLY_UNAVAILABLE'],
-    [{ taskId: 'deposit-refundability', environment: 'production-manual', mode: 'apply', direct: true, confirmed: true, input: { usernames: ['user1'], tenant: 'north', refundable: 1 } }, 'DIRECT_APPLY_UNAVAILABLE']
+    [{ taskId: 'workforce-access', environment: 'staging', mode: 'apply', direct: true, confirmed: true, input: { tenant: 'north', usernames: ['new.agent1'], tenant: 'both', action: 'grant' } }, 'DIRECT_APPLY_UNAVAILABLE'],
+    [{ taskId: 'deposit-refundability', environment: 'production-manual', mode: 'apply', direct: true, confirmed: true, input: { tenant: 'north', usernames: ['user1'], tenant: 'north', refundable: 1 } }, 'DIRECT_APPLY_UNAVAILABLE']
   ]) {
     const response = await app.request('/api/executions', { method: 'POST', body: requestBody(body) });
     assert.equal(response.status, 400, response.text);

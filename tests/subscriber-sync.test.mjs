@@ -89,7 +89,7 @@ test('logout errors are visible without changing the verified synchronization ou
 });
 test('input validation preserves case/zeroes, deduplicates and rejects missing sheet scope', () => {
   assert.deepEqual(validateSyncInput(input(['000123', 'sync.one', '000123'])).usernames, ['000123', 'sync.one']);
-  for (const bad of [{}, { ...input(), tenant: 'south' }, input([123]), input([]), { ...input(), source: {} }]) assert.throws(() => validateSyncInput(bad), { code: 'SHEET_INPUT' });
+  for (const bad of [{}, { ...input(), tenant: 'east' }, input([123]), input([]), { ...input(), source: {} }]) assert.throws(() => validateSyncInput(bad), { code: 'SHEET_INPUT' });
   assert.throws(() => validateSyncInput(input(['sync.one', '000123']), 1), { code: 'SHEET_INPUT' });
 });
 test('request scope binds exact origin, route, method and all three identity fields', () => {
